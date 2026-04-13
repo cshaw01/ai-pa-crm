@@ -32,6 +32,7 @@ def init_db():
                 analysis        TEXT,
                 draft           TEXT,
                 status          TEXT DEFAULT 'pending',
+                kind            TEXT DEFAULT 'inbound',
                 created_at      TEXT DEFAULT (datetime('now')),
                 updated_at      TEXT DEFAULT (datetime('now'))
             );
@@ -54,6 +55,11 @@ def init_db():
                 created_at  TEXT DEFAULT (datetime('now'))
             );
         """)
+        # Migration: add kind column to existing databases
+        try:
+            conn.execute("ALTER TABLE pending_approvals ADD COLUMN kind TEXT DEFAULT 'inbound'")
+        except sqlite3.OperationalError:
+            pass  # column already exists
 
 
 # ------------------------------------------------------------------
@@ -62,15 +68,15 @@ def init_db():
 
 def create_approval(approval_id: str, identifier: str, identifier_type: str,
                     channel: str, sender_name: str, original_message: str,
-                    analysis: str, draft: str):
+                    analysis: str, draft: str, kind: str = 'inbound'):
     with get_db() as conn:
         conn.execute("""
             INSERT INTO pending_approvals
                 (id, identifier, identifier_type, channel, sender_name,
-                 original_message, analysis, draft)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                 original_message, analysis, draft, kind)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (approval_id, identifier, identifier_type, channel, sender_name,
-              original_message, analysis, draft))
+              original_message, analysis, draft, kind))
 
 
 def get_approvals(status: str = 'pending') -> list[dict]:

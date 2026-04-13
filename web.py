@@ -13,8 +13,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+import asyncio
+import uuid
+
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -285,9 +288,135 @@ async def chat(body: ChatRequest):
     return {"response": response}
 
 
+@app.get("/api/chat/stream")
+async def chat_stream(message: str):
+    """SSE stream that runs claude as a subprocess and pipes stdout chunks to client."""
+    async def event_gen():
+        claude_cfg = CONFIG.get('claude', {})
+        bin_path = os.path.expanduser(claude_cfg.get('bin', 'claude'))
+        model = claude_cfg.get('model', 'claude-sonnet-4-6')
+        flags = claude_cfg.get('flags', [])
+        prompt = f"[INTERNAL]\n\n{message}"
+        cmd = [bin_path] + flags + ['--model', model, '-p', prompt]
+
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=str(PROJECT_DIR),
+        )
+        full = []
+        try:
+            assert proc.stdout is not None
+            while True:
+                chunk = await proc.stdout.read(256)
+                if not chunk:
+                    break
+                text = chunk.decode('utf-8', errors='replace')
+                full.append(text)
+                # SSE: each event = "data: <json>\n\n"
+                payload = json.dumps({"chunk": text})
+                yield f"data: {payload}\n\n"
+            await proc.wait()
+        except asyncio.CancelledError:
+            proc.kill()
+            raise
+        # Persist completed exchange + tell client we're done
+        answer = ''.join(full).strip()
+        if answer:
+            db.save_chat(message, answer)
+        yield f"data: {json.dumps({'done': True})}\n\n"
+
+    return StreamingResponse(event_gen(), media_type='text/event-stream')
+
+
 @app.get("/api/chat/history")
 async def chat_history():
     return db.get_chat_history(limit=50)
+
+
+# ------------------------------------------------------------------
+# Routes — compose (proactive outbound)
+# ------------------------------------------------------------------
+
+class ComposeRequest(BaseModel):
+    contact_type: str
+    slug: str
+    intent: str
+
+
+@app.post("/api/compose")
+async def compose(body: ComposeRequest):
+    """Generate a proactive outbound draft for a contact and queue it for approval."""
+    type_to_path = {c["type"]: PROJECT_DIR / c["path"] for c in CONTACTS_CONFIG}
+    folder = type_to_path.get(body.contact_type)
+    if not folder:
+        raise HTTPException(status_code=404, detail="Unknown contact type")
+
+    md_file = folder / f"{body.slug}.md"
+    if not md_file.exists():
+        raise HTTPException(status_code=404, detail="Contact not found")
+
+    content = md_file.read_text()
+
+    # Try to extract identifier from the file
+    identifier = ''
+    identifier_type = 'unknown'
+    sender_name = body.slug.replace('-', ' ').title()
+    for line in content.splitlines():
+        l = line.strip().lstrip('-').strip()
+        if l.lower().startswith('**phone'):
+            identifier = l.split(':', 1)[-1].strip(' *')
+            identifier_type = 'phone'
+            break
+        if l.lower().startswith('**whatsapp'):
+            identifier = l.split(':', 1)[-1].strip(' *')
+            identifier_type = 'whatsapp'
+            break
+        if l.lower().startswith('**email'):
+            identifier = l.split(':', 1)[-1].strip(' *')
+            identifier_type = 'email'
+            break
+
+    # Match a name line if present
+    for line in content.splitlines():
+        if line.startswith('# '):
+            sender_name = line[2:].strip()
+            break
+
+    prompt = (
+        f"[COMPOSE]\n"
+        f"contact_file: {md_file.relative_to(PROJECT_DIR)}\n"
+        f"intent: {body.intent}\n\n"
+        f"Read the contact file, then output:\n"
+        f"*📋 ANALYSIS*\n"
+        f"[Brief context on this contact and what we're proactively reaching out about]\n\n"
+        f"===DRAFT===\n"
+        f"[Friendly outbound message — plain text, 3-5 sentences. Sign off as \"— {BUSINESS_NAME}\"]\n"
+        f"===END==="
+    )
+    response = call_claude(prompt)
+    if not response:
+        raise HTTPException(status_code=500, detail="Claude did not respond")
+
+    analysis_match = re.search(r'\*📋 ANALYSIS\*(.*?)===DRAFT===', response, re.DOTALL)
+    draft_match = re.search(r'===DRAFT===(.*?)===END===', response, re.DOTALL)
+    analysis = analysis_match.group(1).strip() if analysis_match else ''
+    draft = draft_match.group(1).strip() if draft_match else response.strip()
+
+    approval_id = str(uuid.uuid4())
+    db.create_approval(
+        approval_id=approval_id,
+        identifier=identifier or body.slug,
+        identifier_type=identifier_type,
+        channel='telegram',
+        sender_name=sender_name,
+        original_message=f"[Compose intent] {body.intent}",
+        analysis=analysis,
+        draft=draft,
+        kind='outbound',
+    )
+    return {"id": approval_id, "draft": draft, "analysis": analysis}
 
 
 # ------------------------------------------------------------------

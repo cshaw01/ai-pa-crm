@@ -13,24 +13,39 @@
 
   <!-- Header -->
   <header class="header">
-    <div class="status-dot" id="statusDot"></div>
+    <div class="status-dot" id="statusDot" aria-label="Bridge status"></div>
     <h1 id="businessName">Dashboard</h1>
+    <div class="header-status">
+      <button class="hs-item hs-pending" id="hsPending" aria-label="Pending approvals" hidden>
+        <span class="hs-icon">📥</span>
+        <span id="hsPendingCount">0</span>
+      </button>
+      <button class="hs-item hs-activity" id="hsActivity" aria-label="Recent activity">
+        <span class="hs-icon">📊</span>
+        <span>Activity</span>
+      </button>
+      <span class="hs-item hs-sync" id="hsSync" aria-label="Last synced">
+        <span class="hs-icon">🔄</span>
+        <span id="hsSyncLabel">just now</span>
+      </span>
+      <button class="theme-toggle" id="themeToggle" aria-label="Toggle dark mode">🌙</button>
+    </div>
   </header>
 
   <div class="app-body">
 
     <!-- Mobile bottom nav (hidden on desktop) -->
     <nav class="nav">
-      <button class="nav-btn active" data-page="inbox" onclick="showPage('inbox', this)">
+      <button class="nav-btn active" data-page="inbox">
         <span class="icon">📥</span>
         <span>Inbox</span>
-        <span class="nav-badge" id="inboxBadge" style="display:none"></span>
+        <span class="nav-badge" id="inboxBadge" hidden></span>
       </button>
-      <button class="nav-btn" data-page="chat" onclick="showPage('chat', this)">
+      <button class="nav-btn" data-page="chat">
         <span class="icon">💬</span>
         <span>Ask AI</span>
       </button>
-      <button class="nav-btn" data-page="crm" onclick="showPage('crm', this)">
+      <button class="nav-btn" data-page="crm">
         <span class="icon">👥</span>
         <span>Contacts</span>
       </button>
@@ -43,16 +58,16 @@
       <section class="page active" id="page-inbox">
         <div class="col-title">
           📥 Inbox
-          <span class="col-badge" id="inboxColBadge" style="display:none"></span>
+          <span class="col-badge" id="inboxColBadge" hidden></span>
         </div>
         <div class="col-body">
           <div id="approvalList"></div>
         </div>
         <!-- Panel: slide-up on mobile, contained within column on desktop -->
-        <div class="panel-overlay" id="approvalOverlay" onclick="closePanel('approval')"></div>
-        <div class="panel" id="approvalPanel">
+        <div class="panel-overlay" id="approvalOverlay"></div>
+        <div class="panel" id="approvalPanel" role="dialog" aria-modal="true" aria-labelledby="approvalPanelTitle">
           <div class="panel-handle"></div>
-          <button class="panel-close" onclick="closePanel('approval')">✕</button>
+          <button class="panel-close" id="approvalPanelClose" aria-label="Close panel">✕</button>
           <div class="panel-scroll" id="approvalPanelContent"></div>
           <div class="btn-row" id="approvalActions"></div>
         </div>
@@ -64,18 +79,19 @@
         <div class="col-body chat-col-body">
           <div class="chat-messages" id="chatMessages"></div>
         </div>
-        <div class="quick-questions">
-          <button class="quick-q" onclick="quickAsk(this)">Any urgent matters?</button>
-          <button class="quick-q" onclick="quickAsk(this)">Who needs follow-up?</button>
-          <button class="quick-q" onclick="quickAsk(this)">Today's schedule</button>
-          <button class="quick-q" onclick="quickAsk(this)">Stock levels</button>
-          <button class="quick-q" onclick="quickAsk(this)">Recent leads</button>
-          <button class="quick-q" onclick="quickAsk(this)">Overdue clients</button>
+        <div class="quick-questions" id="quickQuestions">
+          <button class="quick-q">Any urgent matters?</button>
+          <button class="quick-q">Who needs follow-up?</button>
+          <button class="quick-q">Today's schedule</button>
+          <button class="quick-q">Stock levels</button>
+          <button class="quick-q">Recent leads</button>
+          <button class="quick-q">Overdue clients</button>
         </div>
         <div class="chat-input-row" id="chatInputRow">
           <input class="chat-input" id="chatInput" type="text"
-                 placeholder="Ask anything about the business…" autocomplete="off">
-          <button class="chat-send" id="chatSend" onclick="sendChat()">↑</button>
+                 placeholder="Ask anything about the business…" autocomplete="off"
+                 aria-label="Ask the AI a question">
+          <button class="chat-send" id="chatSend" aria-label="Send message">↑</button>
         </div>
       </section>
 
@@ -93,16 +109,31 @@
           <div id="contactList"></div>
         </div>
         <!-- Panel: slide-up on mobile, contained within column on desktop -->
-        <div class="panel-overlay" id="contactOverlay" onclick="closePanel('contact')"></div>
-        <div class="panel" id="contactPanel">
+        <div class="panel-overlay" id="contactOverlay"></div>
+        <div class="panel" id="contactPanel" role="dialog" aria-modal="true" aria-labelledby="contactPanelTitle">
           <div class="panel-handle"></div>
-          <button class="panel-close" onclick="closePanel('contact')">✕</button>
+          <button class="panel-close" id="contactPanelClose" aria-label="Close panel">✕</button>
           <div class="panel-scroll" id="contactPanelContent"></div>
         </div>
       </section>
 
     </main>
   </div><!-- /.app-body -->
+
+  <!-- Pull-to-refresh indicator -->
+  <div class="ptr-indicator" id="ptrIndicator">↓ Pull to refresh</div>
+
+  <!-- Activity modal -->
+  <div class="activity-overlay" id="activityOverlay"></div>
+  <div class="activity-modal" id="activityModal" role="dialog" aria-modal="true" aria-labelledby="activityTitle">
+    <div class="activity-modal-header">
+      <div id="activityTitle">📊 Recent Activity</div>
+      <button class="activity-close" id="activityClose" aria-label="Close activity">✕</button>
+    </div>
+    <div class="activity-modal-body" id="activityBody">
+      <div class="empty"><div class="icon">📭</div><p>Loading…</p></div>
+    </div>
+  </div>
 
 </div><!-- /#app -->
 

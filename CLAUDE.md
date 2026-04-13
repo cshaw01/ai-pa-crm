@@ -18,6 +18,7 @@ Every message arrives with one of these prefixes:
 | `[INTERNAL]` | Owner / staff | Answer directly from wiki |
 | `[EXTERNAL]` | Customer, lead, or unknown | Identify → analyse → draft reply → log |
 | `[EDIT_DRAFT]` | Owner editing a draft | Revise the draft and return it |
+| `[COMPOSE]` | Owner initiating outbound | Read contact file → draft proactive message |
 | `[POST_SEND]` | Bridge confirming a reply was sent | Update CRM only, no output |
 
 ---
@@ -78,6 +79,26 @@ psql "$DB" -c "INSERT INTO event_log (identifier, identifier_type, channel, dire
 
 **New contact:**
 Same format, with analysis noting: "New contact — no existing record. Lead file will be created on send."
+
+---
+
+## [COMPOSE] — Proactive Outbound Message
+
+Owner is initiating contact (not replying). The bridge sends:
+
+```
+[COMPOSE]
+contact_file: wiki/path/to/contact.md
+intent: <one line describing what to communicate (e.g. "remind about Tuesday's service")>
+```
+
+1. Read the contact file at the given path
+2. Read any related wiki context if needed (e.g. service history, pricing)
+3. Output the same `*📋 ANALYSIS*` + `===DRAFT===` / `===END===` format as `[EXTERNAL]`
+4. Analysis should note: who they are, why we're reaching out, anything sensitive to mention
+5. Draft should be friendly, plain text, 3–5 sentences, signed off as "— [Business Name]"
+
+No CRM updates at this stage. The approval will be queued and the owner will accept/edit/reject it.
 
 ---
 
