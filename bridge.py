@@ -226,11 +226,11 @@ def handle_internal(msg: InboundMessage, channel) -> None:
 
 
 def handle_callback(callback: dict, channel) -> None:
-    """Process an owner button press on an approval message."""
+    """Process a button press on an approval message."""
     callback_id = callback['id']
     data = callback.get('data', '')
     from_user = callback.get('from', {})
-    owner_id = str(from_user.get('id', ''))
+    user_id = str(from_user.get('id', ''))
 
     if not data or ':' not in data:
         return
@@ -261,7 +261,7 @@ def handle_callback(callback: dict, channel) -> None:
     elif action == 'edit':
         channel.acknowledge_approval(callback_id, "Send your edit instructions in the internal chat.")
         # Store state so next internal message from this owner is treated as edit instructions
-        PENDING[message_ref]['awaiting_edit_from'] = owner_id
+        PENDING[message_ref]['awaiting_edit_from'] = user_id
         logger.info(f"EDIT requested: {message_ref}")
 
     elif action == 'reject':
