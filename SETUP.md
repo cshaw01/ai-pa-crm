@@ -27,7 +27,7 @@ cp config.example.json config.json
 ## 3. Install dependencies
 
 ```bash
-pip install requests
+pip install -r requirements.txt
 ```
 
 ---
@@ -60,46 +60,109 @@ Once all values are filled in, confirm config.json is complete and valid JSON.
 
 ---
 
-## 5. Run the wiki setup prompt
+## 5. Run the wiki + demo data setup prompt
 
-Once config is done, paste this prompt to build the wiki from scratch for the new business. Fill in the placeholders first.
+Once config is done, paste this prompt. Claude will interview you about the business, then build the wiki, seed realistic contacts, populate the inbox with demo messages, and configure the dashboard for the industry. Fill in the placeholders first.
 
 ```
-This project is being set up for a new business.
+This project is being set up for a new business. Before doing anything, ask me the following questions one at a time and wait for my answer before continuing:
 
-Business name: [name]
-Business type: [e.g. corporate gifting, plumbing, restaurant, law firm]
-Location: [city/country]
-Number of mock clients: [e.g. 8 — mix of corporate and individual]
-Number of mock staff: [e.g. 3]
+1. What industry or type of business is this? (e.g. F&B, law firm, e-commerce, real estate, beauty salon, logistics)
+2. What is the business name and which city/country?
+3. Who are the typical customers — consumers, businesses, or both?
+4. What are the main things customers contact you about? (e.g. bookings, quotes, complaints, orders, enquiries)
+5. What channels do customers reach you on? (WhatsApp, Instagram DMs, email, Telegram, walk-in)
+6. How many mock clients do you want? (suggest: 5–8, mix of new and returning)
+7. How many mock staff/team members?
 
-Please:
-1. Delete all existing content inside wiki/ (keep the folder itself)
-2. Design a wiki folder structure appropriate for this business type
-3. Create realistic mock data for all clients, staff, products/services, pricing, and SOPs
-4. Create wiki/INDEX.md as a two-level index pointing to each subfolder
-5. Create _INDEX.md inside each subfolder with record-level listings and identifier fields (phone, email, etc.)
-6. Ensure every client/contact file has an ## Interaction Log section at the bottom
-7. Update the Records count in wiki/INDEX.md to match what was created
+Once you have all answers, do the following in order:
+
+WIKI SETUP
+1. Delete all existing content inside wiki/ (keep the folder)
+2. Design a folder structure appropriate for this industry (clients, leads, staff, products/services, pricing, SOPs, etc.)
+3. Create realistic mock records tailored to the industry — names, contact details, history, statuses
+4. Create wiki/INDEX.md as a two-level index pointing to each subfolder's _INDEX.md
+5. Create _INDEX.md inside each subfolder with record-level rows and identifier fields (phone, email, Instagram handle, etc.)
+6. Every client/contact file must have an ## Interaction Log section at the bottom
+7. Mark 1–2 clients as urgent/overdue and 1–2 as new leads
+
+INBOX DEMO DATA
+Seed 4–6 realistic pending approval messages in the SQLite database at data/crm.db, covering:
+- At least one message from a known returning client (complaint or follow-up)
+- At least one new enquiry from an unknown contact (new lead)
+- At least one message that came via each of the channels the business uses (WhatsApp, Instagram, email, etc.)
+- A mix of tones: friendly enquiry, urgent complaint, price question, booking request
+Use the db.py helper or insert directly via sqlite3. Match the sender names and identifiers to wiki contacts where possible.
+
+CONTACT TAGS
+Decide on 2–4 contact categories that make sense for this industry (e.g. for a salon: Regular, Walk-in, Lead).
+Update the contacts array in config.json — each entry needs:
+  { "type": "slug", "label": "Display Name", "path": "wiki/path/to/folder" }
+The dashboard reads this config to build filter chips and resolve contact paths automatically.
+Make sure the wiki folder paths match exactly what you created in the wiki setup above.
+
+QUICK QUESTIONS
+Replace the 6 quick-question chips in static/index.html with questions relevant to this industry and business type. Examples for a salon: "Any bookings today?", "Low product stock?", "Follow-ups needed?". Pick questions the owner would actually ask daily.
+
+Finally, confirm everything is set up and tell me the URL to open the dashboard.
 ```
 
 ---
 
-## 6. Provision the database
+## 6. Start the services
+
+The local SQLite database (`data/crm.db`) is created automatically on first run — no setup needed.
+
+**Option A — temporary (stops when you disconnect):**
+```bash
+python3 web.py &
+python3 bridge.py
+```
+
+**Option B — persistent via systemd (recommended):**
+```bash
+# Copy and enable both service files
+cp ai-pa-crm-web.service ~/.config/systemd/user/
+cp ai-pa-crm.service ~/.config/systemd/user/
+
+systemctl --user daemon-reload
+systemctl --user enable --now ai-pa-crm-web
+systemctl --user enable --now ai-pa-crm
+
+# Stay running after you log out
+loginctl enable-linger $USER
+```
+
+Check they started:
+```bash
+systemctl --user status ai-pa-crm-web
+systemctl --user status ai-pa-crm
+```
+
+---
+
+## 7. Verify and open the dashboard
+
+```bash
+# Confirm web server is listening
+curl -s http://localhost:PORT/api/status
+```
+
+Open `http://YOUR_SERVER_IP:PORT` in a browser. You should see the business name in the header, contacts loaded, and inbox populated with demo messages.
+
+**Confirm Telegram is working:** send a message to the external topic of your group. Within ~10 seconds it should appear in the inbox as a pending approval.
+
+---
+
+## 8. Provision PostgreSQL (optional — production only)
+
+The default setup uses SQLite which is sufficient for a single-user instance. When you're ready for production:
 
 ```bash
 psql -h YOUR_DB_HOST -U postgres -f schema.sql
 ```
 
-When prompted, use the password you set in Step 4.
-
----
-
-## 7. Start the bridge
-
-```bash
-python3 bridge.py
-```
+Then update `db.url` in `config.json` and restart the web service.
 
 ---
 
@@ -114,3 +177,4 @@ python3 bridge.py
 | `config.example.json` | ✅ Unchanged | Template — never edit directly |
 | `config.json` | ✏️ Generated | Created in Step 4, gitignored |
 | `wiki/` | 🔄 Rebuilt | Created in Step 5, business-specific |
+| `data/crm.db` | 🔄 Auto-created | SQLite, created on first run |

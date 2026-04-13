@@ -30,6 +30,13 @@ CONFIG = json.loads((PROJECT_DIR / 'config.json').read_text())
 WIKI_DIR = PROJECT_DIR / 'wiki'
 BUSINESS_NAME = CONFIG.get('business', {}).get('name', 'CRM')
 
+# Contact folders — read from config, fallback to AC-servicing defaults
+CONTACTS_CONFIG = CONFIG.get('contacts', [
+    {"type": "corporate",   "label": "Corporate",   "path": "wiki/clients/corporate"},
+    {"type": "residential", "label": "Residential", "path": "wiki/clients/residential"},
+    {"type": "lead",        "label": "Lead",        "path": "wiki/leads"},
+])
+
 app = FastAPI(title=f"{BUSINESS_NAME} — Internal Dashboard")
 app.mount("/static", StaticFiles(directory=str(PROJECT_DIR / "static")), name="static")
 
@@ -323,22 +330,27 @@ def load_contacts_from_index(index_path: Path, contact_type: str) -> list[dict]:
     return contacts
 
 
+@app.get("/api/meta")
+async def meta():
+    """Returns business config needed by the frontend — contact types, labels."""
+    return {
+        "business": BUSINESS_NAME,
+        "contacts": [{"type": c["type"], "label": c["label"]} for c in CONTACTS_CONFIG],
+    }
+
+
 @app.get("/api/contacts")
 async def list_contacts():
     contacts = []
-    contacts += load_contacts_from_index(WIKI_DIR / 'clients' / 'corporate' / '_INDEX.md', 'corporate')
-    contacts += load_contacts_from_index(WIKI_DIR / 'clients' / 'residential' / '_INDEX.md', 'residential')
-    contacts += load_contacts_from_index(WIKI_DIR / 'leads' / '_INDEX.md', 'lead')
+    for c in CONTACTS_CONFIG:
+        index_path = PROJECT_DIR / c["path"] / "_INDEX.md"
+        contacts += load_contacts_from_index(index_path, c["type"])
     return contacts
 
 
 @app.get("/api/contacts/{contact_type}/{slug}")
 async def get_contact(contact_type: str, slug: str):
-    type_to_path = {
-        'corporate': WIKI_DIR / 'clients' / 'corporate',
-        'residential': WIKI_DIR / 'clients' / 'residential',
-        'lead': WIKI_DIR / 'leads',
-    }
+    type_to_path = {c["type"]: PROJECT_DIR / c["path"] for c in CONTACTS_CONFIG}
     folder = type_to_path.get(contact_type)
     if not folder:
         raise HTTPException(status_code=404, detail="Unknown contact type")

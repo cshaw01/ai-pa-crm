@@ -4,6 +4,7 @@
 
 let currentPage = 'inbox';
 let allContacts = [];
+let contactTypes = []; // loaded from /api/meta
 let activeFilter = 'all';
 let pollInterval = null;
 let currentApprovalId = null;
@@ -12,7 +13,8 @@ let currentApprovalId = null;
 // Init
 // ------------------------------------------------------------------ //
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+  await loadMeta();   // types must be ready before contacts render
   loadStatus();
   loadApprovals();
   loadContacts();
@@ -32,31 +34,59 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('crmSearch').addEventListener('input', e => {
     renderContacts(e.target.value);
   });
+});
 
-  // Filter chips
-  document.querySelectorAll('.filter-chip').forEach(btn => {
+// ------------------------------------------------------------------ //
+// Meta / config
+// ------------------------------------------------------------------ //
+
+async function loadMeta() {
+  try {
+    const meta = await api('/api/meta');
+    contactTypes = meta.contacts || [];
+  } catch (_) {
+    contactTypes = [
+      { type: 'corporate',   label: 'Corporate' },
+      { type: 'residential', label: 'Residential' },
+      { type: 'lead',        label: 'Lead' },
+    ];
+  }
+  renderFilterChips();
+}
+
+function renderFilterChips() {
+  const row = document.getElementById('filterRow');
+  const chips = [
+    { filter: 'all', label: 'All' },
+    ...contactTypes.map(t => ({ filter: t.type, label: t.label })),
+    { filter: 'urgent', label: 'Urgent' },
+  ];
+  row.innerHTML = chips.map((c, i) =>
+    `<button class="filter-chip${i === 0 ? ' active' : ''}" data-filter="${c.filter}">${esc(c.label)}</button>`
+  ).join('');
+  row.querySelectorAll('.filter-chip').forEach(btn => {
     btn.addEventListener('click', () => {
-      document.querySelectorAll('.filter-chip').forEach(b => b.classList.remove('active'));
+      row.querySelectorAll('.filter-chip').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       activeFilter = btn.dataset.filter;
       renderContacts(document.getElementById('crmSearch').value);
     });
   });
-});
+}
 
 // ------------------------------------------------------------------ //
 // Navigation
 // ------------------------------------------------------------------ //
 
 function showPage(page, btn) {
+  // Desktop shows all 3 columns simultaneously — nav is hidden
+  if (window.innerWidth >= 768) return;
+
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
   document.getElementById(`page-${page}`).classList.add('active');
   btn.classList.add('active');
   currentPage = page;
-
-  const chatRow = document.getElementById('chatInputRow');
-  chatRow.style.display = page === 'chat' ? 'flex' : 'none';
 
   if (page === 'inbox') loadApprovals();
   if (page === 'crm') renderContacts('');
@@ -72,13 +102,15 @@ async function loadStatus() {
     const dot = document.getElementById('statusDot');
     dot.className = 'status-dot ' + (data.bridge === 'running' ? 'running' : 'stopped');
     document.getElementById('businessName').textContent = data.business || 'Dashboard';
+    const count = data.pending_approvals || 0;
+    // Mobile nav badge
     const badge = document.getElementById('inboxBadge');
-    if (data.pending_approvals > 0) {
-      badge.textContent = data.pending_approvals;
-      badge.style.display = 'inline';
-    } else {
-      badge.style.display = 'none';
-    }
+    badge.textContent = count;
+    badge.style.display = count > 0 ? 'inline' : 'none';
+    // Desktop column badge
+    const colBadge = document.getElementById('inboxColBadge');
+    colBadge.textContent = count;
+    colBadge.style.display = count > 0 ? 'inline' : 'none';
   } catch (_) {}
 }
 
@@ -220,6 +252,11 @@ function setActionsLoading(loading) {
 // Chat
 // ------------------------------------------------------------------ //
 
+function quickAsk(btn) {
+  document.getElementById('chatInput').value = btn.textContent.trim();
+  sendChat();
+}
+
 async function sendChat() {
   const input = document.getElementById('chatInput');
   const text = input.value.trim();
@@ -277,7 +314,8 @@ function removeTyping(id) {
 async function loadContacts() {
   try {
     allContacts = await api('/api/contacts');
-    if (currentPage === 'crm') renderContacts('');
+    // On desktop all columns are visible; on mobile only render if on CRM page
+    if (window.innerWidth >= 768 || currentPage === 'crm') renderContacts('');
   } catch (_) {}
 }
 
@@ -314,8 +352,9 @@ function contactCard(c) {
   const status = c['Status'] || c['Next Service'] || '';
   const initials = name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
 
-  const typeLabel = { corporate: 'Corporate', residential: 'Residential', lead: 'Lead' }[c._type] || c._type;
-  const typeBadge = `<span class="badge badge-${c._type}">${typeLabel}</span>`;
+  const typeMeta = contactTypes.find(t => t.type === c._type);
+  const typeLabel = typeMeta ? typeMeta.label : c._type;
+  const typeBadge = contactTypeBadge(c._type, typeLabel);
   const urgentBadge = c._status === 'urgent' ? `<span class="badge badge-urgent">Urgent</span>` : '';
 
   const slug = c._file?.replace('.md', '') || '';
@@ -395,6 +434,23 @@ function renderMarkdown(text) {
     .replace(/^### (.+)$/gm, '<h3>$1</h3>')
     .replace(/^## (.+)$/gm, '<h2>$1</h2>')
     .replace(/^# (.+)$/gm, '<h1>$1</h1>');
+}
+
+// Auto-assign a badge color palette by hashing the type name
+const BADGE_PALETTE = [
+  ['#e0f2fe','#0369a1'], // blue
+  ['#dcfce7','#166534'], // green
+  ['#ede9fe','#5b21b6'], // purple
+  ['#fef9c3','#713f12'], // yellow
+  ['#fce7f3','#9d174d'], // pink
+  ['#ffedd5','#9a3412'], // orange
+];
+
+function contactTypeBadge(type, label) {
+  let hash = 0;
+  for (const c of type) hash = c.charCodeAt(0) + ((hash << 5) - hash);
+  const [bg, fg] = BADGE_PALETTE[Math.abs(hash) % BADGE_PALETTE.length];
+  return `<span class="badge" style="background:${bg};color:${fg}">${esc(label)}</span>`;
 }
 
 function avatarColor(name) {

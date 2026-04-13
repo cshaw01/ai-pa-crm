@@ -15,6 +15,11 @@
   "web": {
     "port": 8080
   },
+  "contacts": [
+    {"type": "TYPE_1", "label": "Label 1", "path": "wiki/path/to/type1"},
+    {"type": "TYPE_2", "label": "Label 2", "path": "wiki/path/to/type2"},
+    {"type": "lead",   "label": "Lead",    "path": "wiki/leads"}
+  ],
   "channels": {
     "telegram": {
       "bot_token": "YOUR_BOT_TOKEN",

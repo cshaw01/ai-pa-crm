@@ -42,9 +42,9 @@ No CRM updates required for internal queries.
 Extract any identifiers from the message metadata (phone, email, telegram_id, WhatsApp number, IP).
 
 Check in this order:
-1. Read `wiki/clients/_INDEX.md` — is this a known client?
-2. Read `wiki/leads/_INDEX.md` — is this a known lead?
-3. If not found → new contact (will create lead on send)
+1. Read `wiki/INDEX.md` — find which folders contain client/contact records
+2. Read the `_INDEX.md` in each contact folder — does any row match the identifier?
+3. If not found in any folder → new contact (will create lead on send)
 
 ### Step 2 — Read the wiki
 
@@ -115,9 +115,10 @@ sent_reply: <the exact text that was sent>
 ### Actions (no output, just updates):
 
 **If is_new_contact = true:**
-1. Create `wiki/leads/[slug].md` using whatever info is available from the message
-2. Update `wiki/leads/_INDEX.md` — add a row for this new lead
-3. Update `wiki/INDEX.md` leads count if needed
+1. Read `wiki/INDEX.md` to find the leads/new-contact folder for this business
+2. Create a new record file in that folder using whatever info is available
+3. Update that folder's `_INDEX.md` — add a row for this new contact
+4. Update `wiki/INDEX.md` count if needed
 
 **If is_new_contact = false:**
 1. Read the contact's MD file at `contact_file`
