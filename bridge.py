@@ -40,7 +40,6 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S',
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler(os.path.join(PROJECT_DIR, 'bridge.log')),
     ]
 )
 logger = logging.getLogger(__name__)
