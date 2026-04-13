@@ -73,7 +73,7 @@ class TelegramChannel(BaseChannel):
                         }
                     ))
 
-                elif topic_id == self.internal_topic and sender_id in self.owner_ids:
+                elif topic_id == self.internal_topic:
                     messages.append(InboundMessage(
                         channel='telegram',
                         direction='internal',
