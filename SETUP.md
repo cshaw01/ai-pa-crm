@@ -1,6 +1,7 @@
 # AI-PA CRM — Setup Guide
 
 Follow these steps to spin up a new instance of this project for any business.
+Steps 1–3 are manual. Steps 4–5 are AI-guided — paste the prompts into Claude Code and it will handle the rest.
 
 ---
 
@@ -13,68 +14,55 @@ cd /path/to/new-business-name
 
 ---
 
-## 2. Set up Telegram
-
-1. Create a new Telegram bot via [@BotFather](https://t.me/BotFather) — get the bot token
-2. Create a new Telegram group and add the bot as admin
-3. Enable Topics on the group (Group Settings → Topics)
-4. Create two topics:
-   - **External** — for incoming customer messages
-   - **Internal** — for owner review and AI responses
-5. Note the group chat ID and both topic IDs
-
----
-
-## 3. Provision the database
-
-Create a new PostgreSQL database for this business (one DB per business):
+## 2. Create config.json
 
 ```bash
-psql -h <host> -U postgres -f schema.sql
+cp config.example.json config.json
 ```
 
-Then update the password in the DB and in `config.json`.
+`config.json` is gitignored and will never be committed. All credentials live here only.
 
 ---
 
-## 4. Update config.json
+## 3. Install dependencies
 
-```json
-{
-  "business": {
-    "name": "Your Business Name",
-    "timezone": "Your/Timezone"
-  },
-  "db": {
-    "url": "postgresql://ai_crm_user:YOUR_PASSWORD@host:5432/ai_crm"
-  },
-  "claude": {
-    "bin": "/home/claude/.local/bin/claude",
-    "flags": ["--dangerously-skip-permissions"],
-    "model": "claude-sonnet-4-6",
-    "project_dir": "/path/to/new-business-name"
-  },
-  "channels": {
-    "telegram": {
-      "bot_token": "YOUR_BOT_TOKEN",
-      "chat_id": "YOUR_GROUP_CHAT_ID",
-      "topics": {
-        "external": YOUR_EXTERNAL_TOPIC_ID,
-        "internal": YOUR_INTERNAL_TOPIC_ID
-      },
-      "owners": ["YOUR_TELEGRAM_USER_ID"]
-    }
-  }
-}
+```bash
+pip install requests
 ```
 
 ---
 
-## 5. Rebuild the wiki for this business
+## 4. Run the configuration setup prompt
 
-The `wiki/` folder contains AC servicing mock data. Replace it entirely.
+Open Claude Code in the project directory and paste this prompt. Claude will ask you for each credential, explain where to find it, and write it directly into `config.json`.
 
-Open Claude Code in the project directory and run this prompt:
+```
+Please set up config.json for this new AI-PA CRM instance.
+
+Walk me through each required value one section at a time. For each value:
+- Tell me what it is
+- Tell me exactly where/how to get it if I don't already have it
+- Wait for me to provide it
+- Write it into config.json before moving to the next section
+
+Sections to complete in order:
+1. Business details (name, timezone)
+2. Database (host, password)
+3. Claude CLI path (confirm the binary exists on this machine)
+4. Telegram bot token
+5. Telegram group chat ID
+6. Telegram topic IDs (external and internal)
+7. Telegram owner user ID
+
+For Telegram items, provide step-by-step instructions using @BotFather and @userinfobot as needed.
+Once all values are filled in, confirm config.json is complete and valid JSON.
+```
+
+---
+
+## 5. Run the wiki setup prompt
+
+Once config is done, paste this prompt to build the wiki from scratch for the new business. Fill in the placeholders first.
 
 ```
 This project is being set up for a new business.
@@ -95,11 +83,19 @@ Please:
 7. Update the Records count in wiki/INDEX.md to match what was created
 ```
 
-Claude will rebuild the entire wiki from scratch with appropriate structure and mock data for the business type.
+---
+
+## 6. Provision the database
+
+```bash
+psql -h YOUR_DB_HOST -U postgres -f schema.sql
+```
+
+When prompted, use the password you set in Step 4.
 
 ---
 
-## 6. Start the bridge
+## 7. Start the bridge
 
 ```bash
 python3 bridge.py
@@ -115,5 +111,6 @@ python3 bridge.py
 | `channels/` | ✅ Unchanged | Generic channel abstraction |
 | `CLAUDE.md` | ✅ Unchanged | Generic instructions, reads business name from config |
 | `schema.sql` | ✅ Unchanged | Generic schema |
-| `config.json` | ✏️ Update | Business name, DB, Telegram credentials |
-| `wiki/` | 🔄 Rebuild | All content is business-specific |
+| `config.example.json` | ✅ Unchanged | Template — never edit directly |
+| `config.json` | ✏️ Generated | Created in Step 4, gitignored |
+| `wiki/` | 🔄 Rebuilt | Created in Step 5, business-specific |
