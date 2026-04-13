@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <title>CRM Dashboard</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- Header -->
+  <header class="header">
+    <div class="status-dot" id="statusDot"></div>
+    <h1 id="businessName">Dashboard</h1>
+  </header>
+
+  <!-- Main content -->
+  <main class="main">
+
+    <!-- ── INBOX ── -->
+    <section class="page active" id="page-inbox">
+      <div id="approvalList"></div>
+    </section>
+
+    <!-- ── CHAT ── -->
+    <section class="page" id="page-chat">
+      <div class="chat-messages" id="chatMessages"></div>
+    </section>
+
+    <!-- ── CRM ── -->
+    <section class="page" id="page-crm">
+      <div class="search-bar">
+        <span>🔍</span>
+        <input type="text" id="crmSearch" placeholder="Search contacts…" autocomplete="off">
+      </div>
+      <div class="filter-row" id="filterRow">
+        <button class="filter-chip active" data-filter="all">All</button>
+        <button class="filter-chip" data-filter="corporate">Corporate</button>
+        <button class="filter-chip" data-filter="residential">Residential</button>
+        <button class="filter-chip" data-filter="lead">Leads</button>
+        <button class="filter-chip" data-filter="urgent">Urgent</button>
+      </div>
+      <div id="contactList"></div>
+    </section>
+
+  </main>
+
+  <!-- Bottom nav -->
+  <nav class="nav">
+    <button class="nav-btn active" data-page="inbox" onclick="showPage('inbox', this)">
+      <span class="icon">📥</span>
+      <span>Inbox</span>
+      <span class="nav-badge" id="inboxBadge" style="display:none"></span>
+    </button>
+    <button class="nav-btn" data-page="chat" onclick="showPage('chat', this)">
+      <span class="icon">💬</span>
+      <span>Ask AI</span>
+    </button>
+    <button class="nav-btn" data-page="crm" onclick="showPage('crm', this)">
+      <span class="icon">👥</span>
+      <span>Contacts</span>
+    </button>
+  </nav>
+
+</div>
+
+<!-- ── APPROVAL DETAIL PANEL ── -->
+<div class="panel-overlay" id="approvalOverlay" onclick="closePanel('approval')"></div>
+<div class="panel" id="approvalPanel">
+  <div class="panel-handle"></div>
+  <div class="panel-scroll" id="approvalPanelContent"></div>
+  <div class="btn-row btn-row-3" id="approvalActions"></div>
+</div>
+
+<!-- ── CONTACT DETAIL PANEL ── -->
+<div class="panel-overlay" id="contactOverlay" onclick="closePanel('contact')"></div>
+<div class="panel" id="contactPanel">
+  <div class="panel-handle"></div>
+  <div class="panel-scroll" id="contactPanelContent"></div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<!-- Chat input (fixed above nav) -->
+<div class="chat-input-row" id="chatInputRow" style="display:none">
+  <input class="chat-input" id="chatInput" type="text" placeholder="Ask anything about the business…" autocomplete="off">
+  <button class="chat-send" id="chatSend" onclick="sendChat()">↑</button>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

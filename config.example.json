@@ -12,6 +12,9 @@
     "model": "claude-sonnet-4-6",
     "project_dir": "YOUR_PROJECT_FULL_PATH"
   },
+  "web": {
+    "port": 8080
+  },
   "channels": {
     "telegram": {
       "bot_token": "YOUR_BOT_TOKEN",
