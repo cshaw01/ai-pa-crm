@@ -89,10 +89,18 @@ function attachStaticListeners() {
   document.getElementById('activityClose').addEventListener('click', closeActivity);
   document.getElementById('activityOverlay').addEventListener('click', closeActivity);
 
+  // Inbox submit modal
+  document.getElementById('inboxAddBtn').addEventListener('click', openInboxSubmit);
+  document.getElementById('inboxSubmitClose').addEventListener('click', closeInboxSubmit);
+  document.getElementById('inboxSubmitOverlay').addEventListener('click', closeInboxSubmit);
+  document.getElementById('inboxSubmitForm').addEventListener('submit', handleInboxSubmit);
+
   // Escape key closes panels / modals
   document.addEventListener('keydown', e => {
     if (e.key !== 'Escape') return;
-    if (document.getElementById('activityModal').classList.contains('open')) {
+    if (document.getElementById('inboxSubmitModal').classList.contains('open')) {
+      closeInboxSubmit();
+    } else if (document.getElementById('activityModal').classList.contains('open')) {
       closeActivity();
     } else if (document.getElementById('approvalPanel').classList.contains('open')) {
       closePanel('approval');
@@ -419,7 +427,7 @@ async function openApproval(id) {
 
     actions.innerHTML = `
       <button class="btn btn-danger"  id="rejectBtn">❌ Reject</button>
-      <button class="btn btn-success" id="acceptBtn" style="grid-column:span 2">✅ Send reply</button>
+      <button class="btn btn-success" id="acceptBtn" style="grid-column:span 2">✅ Approve &amp; copy</button>
     `;
 
     document.getElementById('rejectBtn').addEventListener('click', rejectApproval);
@@ -483,12 +491,17 @@ async function acceptApproval() {
   try { await api(`/api/approvals/${id}/draft`, 'POST', { draft }); }
   catch (_) {}
 
+  // Copy draft to clipboard for manual sending
+  try { await navigator.clipboard.writeText(draft); }
+  catch (_) {}
+
   // Optimistic UI: close panel, show undo toast
   closePanel('approval');
   optimisticAction(id, 'send', async () => {
     await api(`/api/approvals/${id}/accept`, 'POST');
     loadApprovals();
     loadStatus();
+    toast('Approved — draft copied to clipboard');
   });
 }
 
@@ -862,6 +875,65 @@ function timeAgoFromString(s) {
   if (diff < 3600) return `${Math.floor(diff/60)}m`;
   if (diff < 86400) return `${Math.floor(diff/3600)}h`;
   return `${Math.floor(diff/86400)}d`;
+}
+
+// ------------------------------------------------------------------ //
+// Inbox submit (new external message)
+// ------------------------------------------------------------------ //
+
+function openInboxSubmit() {
+  State.lastFocus = document.activeElement;
+  document.getElementById('inboxSubmitOverlay').classList.add('open');
+  document.getElementById('inboxSubmitModal').classList.add('open');
+  document.getElementById('ixName').focus();
+}
+
+function closeInboxSubmit() {
+  document.getElementById('inboxSubmitOverlay').classList.remove('open');
+  document.getElementById('inboxSubmitModal').classList.remove('open');
+  document.getElementById('inboxSubmitForm').reset();
+  if (State.lastFocus) State.lastFocus.focus();
+}
+
+async function handleInboxSubmit(e) {
+  e.preventDefault();
+  const btn = document.getElementById('ixSubmitBtn');
+  const name = document.getElementById('ixName').value.trim();
+  const identifier = document.getElementById('ixIdentifier').value.trim();
+  const channel = document.getElementById('ixChannel').value;
+  const message = document.getElementById('ixMessage').value.trim();
+  if (!name || !message) return;
+
+  btn.disabled = true;
+  btn.textContent = 'Analysing...';
+
+  // Detect identifier type from value
+  let identifierType = 'unknown';
+  if (identifier.includes('@')) identifierType = 'email';
+  else if (/[\d+\-() ]{7,}/.test(identifier)) identifierType = 'phone';
+
+  try {
+    const res = await fetch('/api/inbox/submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sender_name: name,
+        identifier: identifier || name,
+        identifier_type: identifierType,
+        channel,
+        message,
+      }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    closeInboxSubmit();
+    loadApprovals();
+    toast('Message submitted — approval created');
+  } catch (err) {
+    toast('Failed: ' + (err.message || 'unknown error'));
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Submit to AI';
+  }
 }
 
 // ------------------------------------------------------------------ //

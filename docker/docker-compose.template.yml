@@ -9,7 +9,8 @@ services:
       - ./config.json:/app/config.json:ro
       - ./wiki:/app/wiki
       - ./data:/app/data
-      - ./claude-home:/root/.claude
+      - ./claude-home:/home/crm/.claude
+      - ./claude-config.json:/home/crm/.claude.json
     networks:
       - tenant
     deploy:

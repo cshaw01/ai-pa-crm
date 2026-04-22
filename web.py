@@ -22,7 +22,6 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import db
-from channels.telegram import TelegramChannel
 
 # ------------------------------------------------------------------
 # Config
@@ -47,10 +46,6 @@ app.mount("/static", StaticFiles(directory=str(PROJECT_DIR / "static")), name="s
 # ------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------
-
-def get_channel() -> TelegramChannel:
-    return TelegramChannel(CONFIG)
-
 
 def call_claude(prompt: str) -> Optional[str]:
     claude_cfg = CONFIG.get('claude', {})
@@ -188,27 +183,7 @@ async def accept_approval(approval_id: str):
     if approval['status'] != 'pending':
         raise HTTPException(status_code=400, detail="Approval already actioned")
 
-    # Send the draft to the customer via Telegram
-    channel = get_channel()
-    tg_cfg = CONFIG['channels']['telegram']
-    external_topic = tg_cfg['topics']['external']
-
-    from channels.base import OutboundMessage
-    msg_out = OutboundMessage(text=approval['draft'], metadata={'topic_id': external_topic})
-
-    from channels.base import InboundMessage
-    original = InboundMessage(
-        channel=approval['channel'],
-        direction='external',
-        text=approval['original_message'],
-        identifier=approval['identifier'],
-        identifier_type=approval['identifier_type'],
-        sender_name=approval['sender_name'],
-        metadata={'topic_id': external_topic}
-    )
-    channel.send_to_contact(msg_out, original)
-
-    # Update DB
+    # Mark as accepted — owner copies the draft and sends manually
     db.update_approval(approval_id, status='accepted')
     db.log_event(approval['identifier'], approval['identifier_type'],
                  approval['channel'], 'out', 'message_sent',
@@ -228,7 +203,7 @@ async def accept_approval(approval_id: str):
     )
     call_claude(prompt)
 
-    return {"ok": True}
+    return {"ok": True, "draft": approval['draft']}
 
 
 @app.post("/api/approvals/{approval_id}/reject")
@@ -268,6 +243,84 @@ async def edit_approval(approval_id: str, body: EditRequest):
 
     db.update_approval(approval_id, draft=new_draft)
     return {"draft": new_draft}
+
+
+# ------------------------------------------------------------------
+# Routes — submit external message via web
+# ------------------------------------------------------------------
+
+class InboxSubmit(BaseModel):
+    sender_name: str
+    identifier: str = ''
+    identifier_type: str = 'phone'
+    channel: str = 'web'
+    message: str
+
+
+@app.post("/api/inbox/submit")
+async def inbox_submit(body: InboxSubmit):
+    """Staff enters an incoming customer message — queues it and runs Claude analysis in background."""
+    approval_id = str(uuid.uuid4())[:8]
+
+    # Create a placeholder approval immediately
+    db.create_approval(
+        approval_id=approval_id,
+        identifier=body.identifier or body.sender_name,
+        identifier_type=body.identifier_type,
+        channel=body.channel,
+        sender_name=body.sender_name,
+        original_message=body.message,
+        analysis='Analysing...',
+        draft='Generating draft...',
+    )
+    db.log_event(body.identifier, body.identifier_type, body.channel,
+                 'in', 'message_received', body.message[:100])
+
+    # Run Claude analysis in background
+    asyncio.create_task(_analyse_inbox(approval_id, body))
+
+    return {"id": approval_id, "status": "analysing"}
+
+
+async def _analyse_inbox(approval_id: str, body: InboxSubmit):
+    """Background task: call Claude to analyse the message and update the approval."""
+    prompt = (
+        f"[EXTERNAL]\n\n"
+        f"channel: {body.channel}\n"
+        f"identifier: {body.identifier}\n"
+        f"identifier_type: {body.identifier_type}\n"
+        f"sender_name: {body.sender_name}\n"
+        f"timestamp: {datetime.now().isoformat()}\n\n"
+        f"message:\n{body.message}"
+    )
+
+    claude_cfg = CONFIG.get('claude', {})
+    bin_path = os.path.expanduser(claude_cfg.get('bin', 'claude'))
+    model = claude_cfg.get('model', 'claude-sonnet-4-6')
+    flags = claude_cfg.get('flags', [])
+    cmd = [bin_path] + flags + ['--model', model, '-p', prompt]
+
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        cwd=str(PROJECT_DIR),
+    )
+    stdout, _ = await proc.communicate()
+    response = stdout.decode('utf-8', errors='replace').strip()
+
+    if not response:
+        db.update_approval(approval_id, analysis='Claude did not respond', draft='[No draft]')
+        return
+
+    analysis_match = re.search(r'\*📋 ANALYSIS\*(.*?)===DRAFT===', response, re.DOTALL)
+    draft_match = re.search(r'===DRAFT===(.*?)===END===', response, re.DOTALL)
+    analysis = analysis_match.group(1).strip() if analysis_match else ''
+    draft = draft_match.group(1).strip() if draft_match else response.strip()
+    if not draft:
+        draft = "[No draft generated — see analysis]"
+
+    db.update_approval(approval_id, analysis=analysis, draft=draft)
 
 
 # ------------------------------------------------------------------
@@ -409,7 +462,7 @@ async def compose(body: ComposeRequest):
         approval_id=approval_id,
         identifier=identifier or body.slug,
         identifier_type=identifier_type,
-        channel='telegram',
+        channel='web',
         sender_name=sender_name,
         original_message=f"[Compose intent] {body.intent}",
         analysis=analysis,

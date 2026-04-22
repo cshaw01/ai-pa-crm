@@ -27,15 +27,6 @@
     "Recent leads",
     "Overdue clients"
   ],
-  "channels": {
-    "telegram": {
-      "bot_token": "YOUR_BOT_TOKEN",
-      "chat_id": "YOUR_GROUP_CHAT_ID",
-      "topics": {
-        "external": 0,
-        "internal": 0
-      },
-      "owners": ["YOUR_TELEGRAM_USER_ID"]
-    }
-  }
+  "channels": {}
+
 }

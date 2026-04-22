@@ -59,6 +59,7 @@
         <div class="col-title">
           📥 Inbox
           <span class="col-badge" id="inboxColBadge" hidden></span>
+          <button class="inbox-add-btn" id="inboxAddBtn" aria-label="Add message">+ New</button>
         </div>
         <div class="col-body">
           <div id="approvalList"></div>
@@ -132,6 +133,39 @@
     </div>
     <div class="activity-modal-body" id="activityBody">
       <div class="empty"><div class="icon">📭</div><p>Loading…</p></div>
+    </div>
+  </div>
+
+  <!-- New message modal -->
+  <div class="activity-overlay" id="inboxSubmitOverlay"></div>
+  <div class="activity-modal" id="inboxSubmitModal" role="dialog" aria-modal="true" aria-labelledby="inboxSubmitTitle">
+    <div class="activity-modal-header">
+      <div id="inboxSubmitTitle">New Incoming Message</div>
+      <button class="activity-close" id="inboxSubmitClose" aria-label="Close">&#10005;</button>
+    </div>
+    <div class="activity-modal-body" id="inboxSubmitBody">
+      <form id="inboxSubmitForm" autocomplete="off">
+        <label class="form-label">Sender name *
+          <input type="text" id="ixName" required placeholder="e.g. John Smith">
+        </label>
+        <label class="form-label">Phone / email
+          <input type="text" id="ixIdentifier" placeholder="e.g. +1 555-1234 or john@example.com">
+        </label>
+        <label class="form-label">Channel
+          <select id="ixChannel">
+            <option value="phone">Phone call</option>
+            <option value="email">Email</option>
+            <option value="whatsapp">WhatsApp</option>
+            <option value="walk-in">Walk-in</option>
+            <option value="web">Web form</option>
+            <option value="other">Other</option>
+          </select>
+        </label>
+        <label class="form-label">Message *
+          <textarea id="ixMessage" rows="4" required placeholder="What did they say / ask for?"></textarea>
+        </label>
+        <button type="submit" class="btn-primary" id="ixSubmitBtn">Submit to AI</button>
+      </form>
     </div>
   </div>
 

@@ -5,9 +5,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl ca-certificates git procps \
     && rm -rf /var/lib/apt/lists/*
 
+# Non-root user (Claude CLI blocks --dangerously-skip-permissions as root)
+RUN useradd -m -s /bin/bash crm
+
 # Claude CLI — copied from host at build time.
-# The binary is a single ~230MB ELF executable.
-# To update: replace the binary and rebuild the image.
 COPY docker/claude-cli /usr/local/bin/claude
 RUN chmod +x /usr/local/bin/claude
 
@@ -24,13 +25,16 @@ COPY static/ /app/static/
 COPY docker/start.sh /app/start.sh
 RUN chmod +x /app/start.sh
 
+RUN chown -R crm:crm /app
+
 WORKDIR /app
+USER crm
 
 # Volumes (mounted at runtime):
 #   /app/config.json    — tenant config
 #   /app/wiki/          — tenant wiki data
 #   /app/data/          — tenant SQLite DB
-#   /root/.claude/      — Claude CLI auth + project cache
+#   /home/crm/.claude/  — Claude CLI auth + project cache
 
 EXPOSE 8080
 

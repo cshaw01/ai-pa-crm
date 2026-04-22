@@ -225,8 +225,14 @@ def run():
 
     channels = build_channels()
     if not channels:
-        logger.error("No channels configured. Check config.json.")
-        sys.exit(1)
+        logger.info("No external channels configured — bridge idle (web-only mode).")
+        # Stay alive so status checks see the process running
+        while True:
+            try:
+                time.sleep(60)
+            except KeyboardInterrupt:
+                logger.info("Bridge stopped.")
+                return
 
     while True:
         try:
