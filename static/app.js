@@ -1,6 +1,7 @@
 /* ------------------------------------------------------------------ */
 /* AI-PA CRM — Dashboard JS                                             */
 /* ------------------------------------------------------------------ */
+console.log('[CRM] app.js loaded');
 
 const State = {
   currentPage: 'inbox',
@@ -27,8 +28,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadMeta();
   loadStatus();
   loadChatHistory();
+  await loadContacts();
   loadApprovals({ initial: true });
-  loadContacts();
 
   State.pollInterval = setInterval(() => {
     if (State.currentPage === 'inbox' || isDesktop()) loadApprovals();
@@ -90,7 +91,13 @@ function attachStaticListeners() {
   document.getElementById('activityOverlay').addEventListener('click', closeActivity);
 
   // Inbox submit modal
-  document.getElementById('inboxAddBtn').addEventListener('click', openInboxSubmit);
+  const addBtn = document.getElementById('inboxAddBtn');
+  if (addBtn) {
+    addBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openInboxSubmit();
+    });
+  }
   document.getElementById('inboxSubmitClose').addEventListener('click', closeInboxSubmit);
   document.getElementById('inboxSubmitOverlay').addEventListener('click', closeInboxSubmit);
   document.getElementById('inboxSubmitForm').addEventListener('submit', handleInboxSubmit);
@@ -289,6 +296,14 @@ async function loadApprovals(opts = {}) {
     list.querySelectorAll('.card[data-approval-id]').forEach(el => {
       el.addEventListener('click', () => openApproval(el.dataset.approvalId));
     });
+    // Contact name links in inbox cards
+    const nameLinks = list.querySelectorAll('.card-name-link');
+    nameLinks.forEach(el => {
+      el.addEventListener('click', e => {
+        e.stopPropagation();
+        openContact(el.dataset.contactType, el.dataset.contactSlug);
+      });
+    });
   } catch (e) {
     list.innerHTML = `<div class="empty"><p>Could not load approvals</p></div>`;
   }
@@ -329,10 +344,45 @@ function parseTimeAgoMins(s) {
   return 0;
 }
 
+function digitsOnly(s) { return (s || '').replace(/\D/g, ''); }
+
+function findContactMatch(a) {
+  const ident = (a.identifier || '').toLowerCase();
+  const identDigits = digitsOnly(ident);
+  const name = (a.sender_name || '').toLowerCase();
+  const cs = State.allContacts;
+
+  // Pass 1: match by identifier fields (strongest signal)
+  for (const c of cs) {
+    const fields = [c['Phone'], c['Phone / WhatsApp'], c['Email'], c['Identifier'], c['WhatsApp']]
+      .filter(Boolean);
+    for (const f of fields) {
+      const fl = f.toLowerCase();
+      if (fl.includes(ident) || ident.includes(fl)) return c;
+      const fd = digitsOnly(f);
+      if (fd.length >= 7 && identDigits.length >= 7 && (fd.includes(identDigits) || identDigits.includes(fd))) return c;
+    }
+  }
+
+  // Pass 2: match by contact person field (commercial clients)
+  for (const c of cs) {
+    const contactPerson = (c['Contact'] || '').toLowerCase();
+    if (contactPerson && name && contactPerson.includes(name)) return c;
+  }
+
+  // Pass 3: match by sender name against record name
+  for (const c of cs) {
+    const cName = (c['Name'] || c['Company'] || c['Name / Identifier'] || '').toLowerCase();
+    if (cName && name && (cName.includes(name) || name.includes(cName))) return c;
+  }
+
+  return null;
+}
+
 function approvalCard(a, isNewArrival = false) {
   const initials = (a.sender_name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
   const isNew = (a.analysis || '').toLowerCase().includes('new contact');
-  const channelIcon = { telegram: '📱', whatsapp: '💬', email: '📧', instagram: '📸' }[a.channel] || '💬';
+  const channelIcon = { telegram: '📱', whatsapp: '💬', email: '📧', instagram: '📸', phone: '📞', 'walk-in': '🚶', web: '🌐' }[a.channel] || '💬';
 
   // Triage band
   const minsAgo = parseTimeAgoMins(a.time_ago);
@@ -349,13 +399,23 @@ function approvalCard(a, isNewArrival = false) {
   const channelChip = `<span class="badge" style="background:var(--bg);color:var(--muted);border:1px solid var(--border)">${channelIcon} ${esc(a.channel || '')}</span>`;
   const arrivalCls = isNewArrival ? ' new-arrival' : '';
 
+  // Contact link on sender name
+  const match = findContactMatch(a);
+  let nameHTML;
+  if (match) {
+    const slug = (match._file || '').replace('.md', '');
+    nameHTML = `<a class="card-name card-name-link" data-contact-type="${esc(match._type)}" data-contact-slug="${esc(slug)}">${esc(a.sender_name || a.identifier)}</a>`;
+  } else {
+    nameHTML = `<div class="card-name">${esc(a.sender_name || a.identifier)}</div>`;
+  }
+
   return `
     <div class="card ${triage}${arrivalCls}" data-approval-id="${esc(a.id)}" tabindex="0">
       ${ribbon}
       <div class="card-header">
         <div class="avatar" style="background:${avatarColor(a.sender_name || a.identifier)}">${initials}</div>
         <div class="card-meta">
-          <div class="card-name">${esc(a.sender_name || a.identifier)}</div>
+          ${nameHTML}
           <div class="card-sub">${channelChip} ${esc(a.identifier || '')}</div>
         </div>
         <div class="card-time">${esc(a.time_ago || '')}</div>
@@ -400,8 +460,17 @@ async function openApproval(id) {
     const a = await api(`/api/approvals/${id}`);
     const senderContextHTML = await buildSenderContext(a);
 
+    const match = findContactMatch(a);
+    let titleHTML;
+    if (match) {
+      const slug = (match._file || '').replace('.md', '');
+      titleHTML = `<a class="panel-title panel-title-link" id="approvalPanelTitle" data-contact-type="${esc(match._type)}" data-contact-slug="${esc(slug)}">${esc(a.sender_name || a.identifier)}</a>`;
+    } else {
+      titleHTML = `<div id="approvalPanelTitle" class="panel-title">${esc(a.sender_name || a.identifier)}</div>`;
+    }
+
     content.innerHTML = `
-      <div id="approvalPanelTitle" class="panel-title">${esc(a.sender_name || a.identifier)}</div>
+      ${titleHTML}
       <div class="panel-subtitle">${esc(a.identifier || '')} · ${esc(a.channel || '')} · ${esc(a.time_ago || '')}</div>
 
       ${senderContextHTML}
@@ -416,7 +485,7 @@ async function openApproval(id) {
       </details>
 
       <div class="section-label">Draft reply</div>
-      <textarea class="draft-edit" id="draftText" aria-label="Draft reply">${esc(a.draft || '')}</textarea>
+      <textarea class="draft-edit" id="draftText" aria-label="Draft reply">${escAttr(a.draft || '')}</textarea>
 
       <div class="section-label">Edit instructions</div>
       <input type="text" id="editInstructions" placeholder="e.g. Make it shorter, add pricing…"
@@ -442,28 +511,27 @@ async function openApproval(id) {
     if (link) link.addEventListener('click', () => {
       openContact(link.dataset.type, link.dataset.slug);
     });
+    // Wire up panel title link
+    const titleLink = content.querySelector('.panel-title-link');
+    if (titleLink) titleLink.addEventListener('click', () => {
+      openContact(titleLink.dataset.contactType, titleLink.dataset.contactSlug);
+    });
   } catch (e) {
     content.innerHTML = `<div class="empty"><p>Could not load approval</p></div>`;
   }
 }
 
 async function buildSenderContext(a) {
-  // Find a matching contact by identifier (search across all loaded contacts)
   if (!State.allContacts.length) {
     try { State.allContacts = await api('/api/contacts'); } catch (_) {}
   }
-  const ident = (a.identifier || '').toLowerCase();
-  const match = State.allContacts.find(c => {
-    const fields = [c['Phone'], c['Phone / WhatsApp'], c['Email'], c['Identifier'], c['WhatsApp']]
-      .filter(Boolean).map(v => v.toLowerCase());
-    return fields.some(f => f.includes(ident) || ident.includes(f));
-  });
+  const match = findContactMatch(a);
 
   if (!match) {
     return `
       <div class="sender-context">
         <div class="sc-label">Sender context</div>
-        <div>🆕 New contact — no existing record</div>
+        <div>🆕 New contact — contact will be created once a response is sent.</div>
       </div>`;
   }
 
@@ -1064,6 +1132,15 @@ function esc(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/\n/g, '<br>');
+}
+
+function escAttr(str) {
+  if (str === undefined || str === null) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 function renderMarkdown(text) {

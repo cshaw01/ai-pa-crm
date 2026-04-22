@@ -6,33 +6,580 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <title>CRM Dashboard</title>
-  <link rel="stylesheet" href="/static/style.css">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: ['selector', '[data-theme="dark"]'],
+    }
+  </script>
+  <link rel="stylesheet" href="/static/style.css?v=3">
+  <style type="text/tailwindcss">
+    /* ── Focus ── */
+    :focus-visible {
+      @apply outline-2 outline-offset-2 rounded;
+      outline-color: var(--primary);
+    }
+
+    /* ── Status dot ── */
+    .status-dot {
+      @apply w-2 h-2 rounded-full shrink-0 transition-colors duration-300;
+      background: var(--muted);
+    }
+    .status-dot.running {
+      background: var(--success);
+      box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.18);
+    }
+    .status-dot.stopped {
+      background: var(--danger);
+      box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.18);
+    }
+
+    /* ── Header items ── */
+    .hs-item {
+      @apply flex items-center gap-1.5 py-1 px-2 rounded-md text-xs cursor-pointer;
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--muted);
+      font-family: inherit;
+    }
+    .hs-item:hover { background: var(--bg); border-color: var(--border); }
+    .hs-sync { @apply cursor-default; }
+    .hs-sync:hover { background: transparent !important; border-color: transparent !important; }
+
+    .theme-toggle {
+      @apply shrink-0 py-1 px-2 rounded-md text-sm cursor-pointer;
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+    .theme-toggle:hover { background: var(--bg); }
+
+    @media (max-width: 480px) {
+      #hsPending, #hsSync { @apply hidden; }
+    }
+
+    /* ── Bottom nav ── */
+    .nav {
+      @apply h-[60px] flex fixed bottom-0 left-0 right-0 z-10 md:hidden;
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+    }
+    .nav-btn {
+      @apply flex-1 flex flex-col items-center justify-center gap-0.5 p-2 cursor-pointer text-[0.7rem] transition-colors duration-150;
+      background: none;
+      border: none;
+      color: var(--muted);
+    }
+    .nav-btn .icon { @apply text-[1.4rem] leading-none; }
+    .nav-btn.active { color: var(--primary); @apply font-semibold; }
+    .nav-badge {
+      @apply text-[0.65rem] font-bold rounded-xl py-0.5 px-1.5 min-w-[18px] text-center absolute top-1.5 translate-x-2;
+      background: var(--danger);
+      color: #fff;
+    }
+
+    /* ── Page layout ── */
+    .main { @apply flex-1 flex flex-col overflow-hidden min-w-0; }
+    .page { @apply hidden; }
+    .page.active { @apply flex flex-col flex-1 overflow-hidden; }
+
+    .col-body {
+      @apply flex-1 overflow-y-auto p-3 min-h-0;
+      padding-bottom: calc(60px + 12px);
+    }
+    .chat-col-body { @apply pb-0; }
+
+    .col-title { @apply hidden; }
+    .col-badge {
+      @apply text-[0.65rem] font-bold rounded-xl py-0.5 px-1.5 min-w-[18px] text-center;
+      background: var(--danger);
+      color: #fff;
+    }
+
+    /* ── Cards ── */
+    .card {
+      @apply rounded-xl mb-2.5 overflow-hidden relative cursor-pointer;
+      @apply transition-[border-color,transform,box-shadow,background] duration-150;
+      background: var(--surface);
+      border: 1px solid var(--border);
+    }
+    @media (hover: hover) {
+      .card:hover {
+        @apply -translate-y-px;
+        border-color: var(--primary);
+        box-shadow: var(--shadow);
+      }
+    }
+    .card.urgent  { border-left: 4px solid var(--danger);  background: var(--urgent); }
+    .card.warning { border-left: 4px solid var(--warning); background: var(--warn-bg); }
+    .card.wait-fresh { border-left: 4px solid var(--success); }
+    .card.wait-warm  { border-left: 4px solid var(--warning); }
+    .card.wait-stale { border-left: 4px solid var(--danger); }
+    .card.new-arrival { animation: newArrival 3s ease-out; border-color: var(--primary); }
+
+    .ribbon {
+      @apply absolute top-2.5 right-2.5 text-[0.62rem] font-extrabold py-0.5 px-2 rounded-xl tracking-wide pointer-events-none;
+      background: var(--warning);
+      color: #fff;
+    }
+    .ribbon.urgent { background: var(--danger); }
+
+    .group-label {
+      @apply text-[0.7rem] font-bold uppercase tracking-wide pt-3.5 px-1 pb-1.5 mb-1.5 flex items-center gap-1.5;
+      color: var(--muted);
+    }
+    .group-label:first-child { @apply pt-0.5; }
+    .gl-count {
+      @apply text-[0.65rem] font-bold py-0.5 px-2 rounded-xl;
+      background: var(--bg);
+      color: var(--muted);
+      border: 1px solid var(--border);
+    }
+
+    .card-header { @apply pt-3.5 px-4 pb-2.5 flex items-start gap-3; }
+    .avatar {
+      @apply w-10 h-10 rounded-full flex items-center justify-center font-bold text-base shrink-0;
+      background: var(--primary);
+      color: #fff;
+    }
+    .card-meta { @apply flex-1 min-w-0; }
+    .card-name { @apply font-semibold text-[0.95rem] whitespace-nowrap overflow-hidden text-ellipsis; }
+    .card-sub  { @apply text-[0.8rem] mt-0.5; color: var(--muted); }
+    .card-time { @apply text-xs whitespace-nowrap; color: var(--muted); }
+    .card-body { @apply px-4 pb-3.5; }
+    .card-preview { @apply text-sm line-clamp-2; color: var(--muted); }
+
+    /* ── Badges ── */
+    .badge { @apply inline-block text-[0.7rem] font-semibold py-0.5 px-2 rounded-full mt-1; }
+    .badge-lead     { background: #e0f2fe; color: #0369a1; }
+    .badge-client   { background: #dcfce7; color: #166534; }
+    .badge-corporate { background: #ede9fe; color: #5b21b6; }
+    .badge-urgent   { background: #fee2e2; color: #991b1b; }
+    .badge-new      { background: #fef9c3; color: #713f12; }
+
+    /* ── Buttons ── */
+    .btn {
+      @apply inline-flex items-center justify-center gap-1.5 py-2.5 px-4 rounded-lg text-sm font-semibold cursor-pointer transition-opacity duration-150;
+      border: none;
+    }
+    .btn:active { @apply scale-[0.97]; }
+    .btn:disabled { @apply opacity-50 cursor-not-allowed; }
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-primary:hover { filter: brightness(1.1); }
+    .btn-success { background: var(--success); color: #fff; }
+    .btn-danger  { background: var(--danger);  color: #fff; }
+    .btn-warning { background: var(--warning); color: #fff; }
+    .btn-ghost   { background: var(--bg); color: var(--text); border: 1px solid var(--border); }
+    .btn-full    { @apply w-full; }
+
+    .btn-row {
+      @apply grid grid-cols-2 gap-2 py-3 px-4;
+      border-top: 1px solid var(--border);
+    }
+    .btn-row-3 { @apply grid-cols-3; }
+
+    /* ── Panels ── */
+    .panel-overlay {
+      @apply hidden fixed inset-0 z-20;
+      background: rgba(0,0,0,0.4);
+    }
+    .panel-overlay.open { @apply block; }
+
+    .panel {
+      @apply fixed left-0 right-0 bottom-0 rounded-t-[20px] z-[21] flex flex-col translate-y-full;
+      max-height: 92dvh;
+      background: var(--surface);
+      transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+    }
+    .panel.open { @apply translate-y-0; }
+
+    .panel-handle {
+      @apply w-9 h-1 rounded-sm mx-auto mt-3 shrink-0;
+      background: var(--border);
+    }
+    .panel-scroll { @apply overflow-y-auto flex-1 p-4; }
+    .panel-title  { @apply text-lg font-bold mb-1; }
+    .panel-subtitle { @apply text-sm mb-4; color: var(--muted); }
+    .panel-close {
+      @apply hidden absolute top-3.5 right-3.5 w-[30px] h-[30px] rounded-full text-sm cursor-pointer items-center justify-center z-[2] shrink-0;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--muted);
+    }
+
+    .section-label {
+      @apply text-xs font-bold uppercase tracking-wide mt-4 mb-2;
+      color: var(--muted);
+    }
+    .message-bubble {
+      @apply rounded-xl p-3 text-sm leading-relaxed;
+      background: var(--bg);
+    }
+    .analysis-box {
+      @apply rounded-xl p-3 text-[0.85rem] leading-relaxed whitespace-pre-wrap max-h-[200px] overflow-y-auto;
+      background: #f0f4ff;
+    }
+    textarea.draft-edit {
+      @apply w-full min-h-[120px] rounded-xl p-3 text-sm leading-relaxed resize-y;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      font-family: inherit;
+    }
+    textarea.draft-edit:focus { @apply outline-none; border-color: var(--primary); }
+
+    /* ── Chat ── */
+    .chat-messages { @apply flex flex-col gap-3 pb-2; }
+    .chat-msg { @apply max-w-[85%]; }
+    .chat-msg.user { @apply self-end; }
+    .chat-msg.ai   { @apply self-start; }
+
+    .chat-bubble { @apply py-2.5 px-3.5 rounded-[18px] text-sm leading-relaxed; }
+    .chat-msg.user .chat-bubble {
+      @apply rounded-br;
+      background: var(--primary);
+      color: #fff;
+    }
+    .chat-msg.ai .chat-bubble {
+      @apply rounded-bl whitespace-pre-wrap;
+      background: var(--surface);
+      border: 1px solid var(--border);
+    }
+    .chat-msg.ai .chat-bubble table { @apply border-collapse text-[0.82rem] my-1.5 w-full; }
+    .chat-msg.ai .chat-bubble td,
+    .chat-msg.ai .chat-bubble th {
+      @apply py-1 px-2 text-left;
+      border: 1px solid var(--border);
+    }
+
+    .chat-input-row {
+      @apply flex gap-2 py-2.5 px-3 shrink-0;
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+    }
+    .chat-input {
+      @apply flex-1 py-2.5 px-3.5 rounded-3xl text-sm outline-none;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      font-family: inherit;
+    }
+    .chat-input:focus { border-color: var(--primary); background: var(--surface); }
+    .chat-send {
+      @apply w-10 h-10 rounded-full text-lg flex items-center justify-center shrink-0 cursor-pointer;
+      background: var(--primary);
+      color: #fff;
+      border: none;
+    }
+
+    .typing { @apply flex gap-1 py-1; }
+    .typing span {
+      @apply w-[7px] h-[7px] rounded-full;
+      background: var(--muted);
+      animation: bounce 1.2s infinite;
+    }
+    .typing span:nth-child(2) { animation-delay: 0.2s; }
+    .typing span:nth-child(3) { animation-delay: 0.4s; }
+
+    /* ── CRM / Contacts ── */
+    .search-bar {
+      @apply flex items-center rounded-xl py-2 px-3 gap-2 mb-2.5;
+      background: var(--surface);
+      border: 1px solid var(--border);
+    }
+    .search-bar input {
+      @apply flex-1 border-none outline-none text-sm bg-transparent;
+      font-family: inherit;
+    }
+
+    .filter-row {
+      @apply flex gap-1.5 mb-3 overflow-x-auto;
+      scrollbar-width: none;
+    }
+    .filter-row::-webkit-scrollbar { @apply hidden; }
+    .filter-chip {
+      @apply py-1.5 px-3 rounded-full text-[0.8rem] font-medium cursor-pointer whitespace-nowrap transition-all duration-150;
+      border: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .filter-chip.active {
+      background: var(--primary);
+      color: #fff;
+      border-color: var(--primary);
+    }
+
+    .contact-html { @apply text-sm leading-relaxed; }
+    .contact-html h1 { @apply text-lg mb-1; }
+    .contact-html h2 { @apply text-[0.95rem] mt-4 mb-1.5; color: var(--primary); }
+    .contact-html table { @apply border-collapse w-full my-1.5; }
+    .contact-html td,
+    .contact-html th { @apply text-[0.82rem] p-1.5 px-2; border: 1px solid var(--border); }
+    .contact-html ul { @apply pl-4; }
+    .contact-html li { @apply mb-0.5; }
+    .contact-html strong { @apply font-semibold; }
+
+    .contact-html details {
+      @apply mb-2.5 rounded-lg overflow-hidden;
+      border: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .contact-html details[open] summary { border-bottom: 1px solid var(--border); }
+    .contact-html summary {
+      @apply py-2.5 px-3.5 font-semibold cursor-pointer text-sm flex items-center gap-2;
+      background: var(--surface-2);
+      list-style: none;
+    }
+    .contact-html summary::-webkit-details-marker { @apply hidden; }
+    .contact-html summary::before {
+      content: '\25B8';
+      @apply text-[0.7rem] transition-transform duration-200;
+      color: var(--muted);
+    }
+    .contact-html details[open] summary::before { @apply rotate-90; }
+    .contact-html .section-content { @apply p-3; }
+
+    .contact-compose-btn {
+      @apply absolute bottom-2.5 right-2.5 rounded-2xl py-1.5 px-3 text-[0.72rem] font-semibold cursor-pointer opacity-0 transition-opacity duration-150 z-[1];
+      background: var(--primary);
+      color: #fff;
+      border: none;
+    }
+    .card:hover .contact-compose-btn,
+    .contact-compose-btn:focus-visible { @apply opacity-100; }
+    @media (hover: none) { .contact-compose-btn { @apply opacity-100; } }
+
+    .compose-intent {
+      @apply w-full min-h-[80px] rounded-xl p-3 text-sm leading-relaxed resize-y;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-family: inherit;
+    }
+    .compose-intent:focus { @apply outline-none; border-color: var(--primary); }
+
+    /* ── Empty / loading ── */
+    .empty { @apply text-center py-12 px-6; color: var(--muted); }
+    .empty .icon { @apply text-[2.5rem] mb-3; }
+    .empty p { @apply text-sm; }
+
+    .spinner {
+      @apply w-6 h-6 rounded-full my-12 mx-auto;
+      border: 3px solid var(--border);
+      border-top-color: var(--primary);
+      animation: spin 0.7s linear infinite;
+    }
+
+    .skeleton-card {
+      @apply rounded-xl p-3.5 px-4 mb-2.5;
+      background: var(--surface);
+      border: 1px solid var(--border);
+    }
+    .sk-line {
+      @apply h-3 rounded-md mb-2;
+      background: linear-gradient(90deg, var(--border) 0%, var(--bg) 50%, var(--border) 100%);
+      background-size: 200% 100%;
+      animation: shimmer 1.4s infinite;
+    }
+    .sk-line.sk-title { @apply w-[45%] h-3.5; }
+    .sk-line.sk-sub   { @apply w-[65%]; }
+    .sk-line.sk-body  { @apply w-[90%] mb-0; }
+
+    /* ── Sender context ── */
+    .sender-context {
+      @apply rounded-xl p-3 mb-3 text-[0.85rem];
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+    }
+    .sender-context .sc-label {
+      @apply text-[0.7rem] font-bold uppercase tracking-wide mb-1.5;
+      color: var(--muted);
+    }
+    .sender-context .sc-link {
+      @apply cursor-pointer font-semibold no-underline;
+      color: var(--primary);
+    }
+    .sender-context .sc-link:hover { @apply underline; }
+    .sender-context .sc-snippet {
+      @apply mt-1 text-[0.8rem] leading-snug;
+      color: var(--muted);
+    }
+
+    /* ── Activity modal ── */
+    .activity-overlay {
+      @apply hidden fixed inset-0 z-40;
+      background: rgba(0,0,0,0.4);
+    }
+    .activity-overlay.open { @apply block; }
+
+    .activity-modal {
+      @apply hidden fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[92%] max-w-[520px] max-h-[80vh] rounded-xl overflow-hidden flex-col z-[41];
+      background: var(--surface);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+    }
+    .activity-modal.open { @apply flex; }
+    .activity-modal-header {
+      @apply p-3.5 px-4 flex items-center justify-between font-bold text-base shrink-0;
+      border-bottom: 1px solid var(--border);
+    }
+    .activity-modal-body { @apply overflow-y-auto flex-1; }
+    .activity-close {
+      @apply cursor-pointer text-lg;
+      background: none; border: none; color: var(--muted);
+    }
+
+    .activity-event {
+      @apply p-3 px-4 flex gap-3 items-start;
+      border-bottom: 1px solid var(--border);
+    }
+    .activity-event:last-child { @apply border-b-0; }
+    .activity-event .ev-icon { @apply text-lg shrink-0; }
+    .activity-event .ev-meta { @apply flex-1 min-w-0; }
+    .activity-event .ev-title { @apply font-semibold text-sm; }
+    .activity-event .ev-sub   { @apply text-xs mt-0.5 break-words; color: var(--muted); }
+    .activity-event .ev-time  { @apply text-[0.72rem] shrink-0; color: var(--muted); }
+
+    /* ── Quick questions ── */
+    .quick-questions {
+      @apply flex gap-1.5 py-2 px-3 overflow-x-auto shrink-0;
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      scrollbar-width: none;
+    }
+    .quick-questions::-webkit-scrollbar { @apply hidden; }
+    .quick-q {
+      @apply py-1.5 px-3.5 rounded-2xl text-xs font-medium cursor-pointer whitespace-nowrap shrink-0 transition-all duration-150;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text);
+    }
+    .quick-q:hover, .quick-q:active {
+      background: var(--primary);
+      color: #fff;
+      border-color: var(--primary);
+    }
+
+    /* ── Pull-to-refresh ── */
+    .ptr-indicator {
+      @apply absolute top-0 left-1/2 -translate-x-1/2 -translate-y-[46px] w-9 h-9 rounded-full flex items-center justify-center text-lg z-[5] pointer-events-none;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+      transition: transform 0.25s cubic-bezier(0.32, 0.72, 0, 1);
+    }
+    .ptr-indicator.visible { transform: translateX(-50%) translateY(10px); }
+    .ptr-indicator.spin { animation: spin 0.8s linear infinite; }
+
+    /* ── Toast ── */
+    .toast {
+      @apply fixed left-1/2 -translate-x-1/2 translate-y-5 py-2.5 px-5 rounded-3xl text-sm font-medium opacity-0 pointer-events-none z-30 whitespace-nowrap transition-all duration-300;
+      bottom: 72px;
+      background: #1f2937;
+      color: #fff;
+    }
+    .toast.show { @apply opacity-100 translate-y-0; }
+
+    /* ── Inbox add button ── */
+    .inbox-add-btn {
+      @apply fixed bottom-[72px] right-4 z-10 py-2.5 px-[18px] text-sm font-semibold rounded-3xl cursor-pointer;
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+    }
+    .inbox-add-btn:hover { filter: brightness(1.1); }
+
+    /* ── Form fields ── */
+    .form-label {
+      @apply block text-[0.85rem] font-semibold mb-3;
+      color: var(--muted);
+    }
+    .form-label input,
+    .form-label select,
+    .form-label textarea {
+      @apply block w-full mt-1 py-2 px-2.5 text-sm rounded-lg;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text);
+      font-family: inherit;
+    }
+    .form-label textarea { @apply resize-y; }
+
+    /* ── Clickable contact name links ── */
+    .card-name-link,
+    .panel-title-link {
+      @apply cursor-pointer no-underline;
+      color: var(--primary);
+    }
+    .card-name-link:hover,
+    .panel-title-link:hover { @apply underline; }
+
+    /* ── Desktop layout (>= 768px) ── */
+    @media (min-width: 768px) {
+      .main {
+        @apply flex-row h-full overflow-hidden;
+        padding: 0;
+      }
+      .page,
+      .page.active {
+        @apply flex flex-col flex-1 min-w-0 relative h-full overflow-hidden;
+        border-right: 1px solid var(--border);
+      }
+      .page:last-child { border-right: none; }
+
+      .col-title {
+        @apply flex items-center gap-2 py-4 px-4 pb-3.5 text-base font-bold shrink-0;
+        border-bottom: 1px solid var(--border);
+        background: var(--surface);
+      }
+      .col-body { @apply p-3 pb-3; }
+      .chat-col-body { @apply pb-0; }
+      .chat-input-row {
+        @apply static flex shrink-0;
+        border-top: 1px solid var(--border);
+      }
+
+      .panel-overlay { @apply absolute inset-0 z-[5]; }
+      .panel {
+        @apply absolute left-0 right-0 bottom-0 max-h-[88%] rounded-t-2xl translate-y-full z-[6];
+        top: auto; width: auto;
+        transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+      }
+      .panel.open { @apply translate-y-0; }
+      .panel-handle { @apply block; }
+      .panel-close  { @apply flex; }
+
+      .toast { @apply bottom-3; }
+
+      .inbox-add-btn { @apply absolute bottom-4 right-4; }
+
+      .header { @apply px-6; }
+    }
+  </style>
 </head>
-<body>
-<div id="app">
+<body class="font-sans min-h-[100dvh] overflow-x-hidden transition-colors duration-200 bg-[var(--bg)] text-[var(--text)]">
+<div id="app" class="flex flex-col h-[100dvh]">
 
   <!-- Header -->
-  <header class="header">
+  <header class="header h-14 flex items-center px-4 gap-3 z-10 shrink-0 border-b border-[var(--border)] bg-[var(--surface)]">
     <div class="status-dot" id="statusDot" aria-label="Bridge status"></div>
-    <h1 id="businessName">Dashboard</h1>
-    <div class="header-status">
-      <button class="hs-item hs-pending" id="hsPending" aria-label="Pending approvals" hidden>
-        <span class="hs-icon">📥</span>
+    <h1 id="businessName" class="text-[1.05rem] md:text-lg font-bold flex-1 min-w-0 whitespace-nowrap overflow-hidden text-ellipsis">Dashboard</h1>
+    <div class="flex items-center gap-2.5 text-xs shrink-0 text-[var(--muted)]">
+      <button class="hs-item" id="hsPending" aria-label="Pending approvals" hidden>
+        <span>📥</span>
         <span id="hsPendingCount">0</span>
       </button>
-      <button class="hs-item hs-activity" id="hsActivity" aria-label="Recent activity">
-        <span class="hs-icon">📊</span>
+      <button class="hs-item" id="hsActivity" aria-label="Recent activity">
+        <span>📊</span>
         <span>Activity</span>
       </button>
       <span class="hs-item hs-sync" id="hsSync" aria-label="Last synced">
-        <span class="hs-icon">🔄</span>
+        <span>🔄</span>
         <span id="hsSyncLabel">just now</span>
       </span>
       <button class="theme-toggle" id="themeToggle" aria-label="Toggle dark mode">🌙</button>
     </div>
   </header>
 
-  <div class="app-body">
+  <div class="flex-1 flex overflow-hidden relative">
 
     <!-- Mobile bottom nav (hidden on desktop) -->
     <nav class="nav">
@@ -59,11 +606,11 @@
         <div class="col-title">
           📥 Inbox
           <span class="col-badge" id="inboxColBadge" hidden></span>
-          <button class="inbox-add-btn" id="inboxAddBtn" aria-label="Add message">+ New</button>
         </div>
         <div class="col-body">
           <div id="approvalList"></div>
         </div>
+        <button class="inbox-add-btn" id="inboxAddBtn" aria-label="Add message">+ New</button>
         <!-- Panel: slide-up on mobile, contained within column on desktop -->
         <div class="panel-overlay" id="approvalOverlay"></div>
         <div class="panel" id="approvalPanel" role="dialog" aria-modal="true" aria-labelledby="approvalPanelTitle">
@@ -104,9 +651,7 @@
             <span>🔍</span>
             <input type="text" id="crmSearch" placeholder="Search contacts…" autocomplete="off">
           </div>
-          <div class="filter-row" id="filterRow">
-            <!-- populated dynamically from /api/meta -->
-          </div>
+          <div class="filter-row" id="filterRow"></div>
           <div id="contactList"></div>
         </div>
         <!-- Panel: slide-up on mobile, contained within column on desktop -->
@@ -119,7 +664,7 @@
       </section>
 
     </main>
-  </div><!-- /.app-body -->
+  </div>
 
   <!-- Pull-to-refresh indicator -->
   <div class="ptr-indicator" id="ptrIndicator">↓ Pull to refresh</div>
@@ -143,7 +688,7 @@
       <div id="inboxSubmitTitle">New Incoming Message</div>
       <button class="activity-close" id="inboxSubmitClose" aria-label="Close">&#10005;</button>
     </div>
-    <div class="activity-modal-body" id="inboxSubmitBody">
+    <div class="activity-modal-body p-4" id="inboxSubmitBody">
       <form id="inboxSubmitForm" autocomplete="off">
         <label class="form-label">Sender name *
           <input type="text" id="ixName" required placeholder="e.g. John Smith">
@@ -164,7 +709,7 @@
         <label class="form-label">Message *
           <textarea id="ixMessage" rows="4" required placeholder="What did they say / ask for?"></textarea>
         </label>
-        <button type="submit" class="btn-primary" id="ixSubmitBtn">Submit to AI</button>
+        <button type="submit" class="btn btn-primary w-full mt-2" id="ixSubmitBtn">Submit to AI</button>
       </form>
     </div>
   </div>
@@ -174,6 +719,6 @@
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
-<script src="/static/app.js"></script>
+<script src="/static/app.js?v=3"></script>
 </body>
 </html>
