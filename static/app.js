@@ -139,6 +139,7 @@ async function loadMeta() {
   try {
     const meta = await api('/api/meta');
     State.contactTypes = meta.contacts || [];
+    if (meta.quick_questions) renderQuickQuestions(meta.quick_questions);
   } catch (_) {
     State.contactTypes = [
       { type: 'corporate',   label: 'Corporate' },
@@ -147,6 +148,20 @@ async function loadMeta() {
     ];
   }
   renderFilterChips();
+}
+
+function renderQuickQuestions(questions) {
+  const container = document.getElementById('quickQuestions');
+  if (!container || !questions.length) return;
+  container.innerHTML = questions.map(q =>
+    `<button class="quick-q">${esc(q)}</button>`
+  ).join('');
+  container.querySelectorAll('.quick-q').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.getElementById('chatInput').value = btn.textContent.trim();
+      sendChat();
+    });
+  });
 }
 
 function renderFilterChips() {

@@ -1,0 +1,32 @@
+services:
+  crm:
+    image: ai-pa-crm:latest
+    container_name: crm-__TENANT__
+    restart: unless-stopped
+    ports:
+      - "__PORT__:8080"
+    volumes:
+      - ./config.json:/app/config.json:ro
+      - ./wiki:/app/wiki
+      - ./data:/app/data
+      - ./claude-home:/root/.claude
+    networks:
+      - tenant
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+          cpus: "0.5"
+        reservations:
+          memory: 128M
+    # Low priority: master processes survive OOM before tenants
+    oom_score_adj: 500
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  tenant:
+    driver: bridge

@@ -7,10 +7,9 @@
     "url": "postgresql://ai_crm_user:YOUR_DB_PASSWORD@YOUR_DB_HOST:5432/ai_crm"
   },
   "claude": {
-    "bin": "/home/claude/.local/bin/claude",
+    "bin": "claude",
     "flags": ["--dangerously-skip-permissions"],
-    "model": "claude-sonnet-4-6",
-    "project_dir": "YOUR_PROJECT_FULL_PATH"
+    "model": "claude-sonnet-4-6"
   },
   "web": {
     "port": 8080
@@ -19,6 +18,14 @@
     {"type": "TYPE_1", "label": "Label 1", "path": "wiki/path/to/type1"},
     {"type": "TYPE_2", "label": "Label 2", "path": "wiki/path/to/type2"},
     {"type": "lead",   "label": "Lead",    "path": "wiki/leads"}
+  ],
+  "quick_questions": [
+    "Any urgent matters?",
+    "Who needs follow-up?",
+    "Today's schedule",
+    "Stock levels",
+    "Recent leads",
+    "Overdue clients"
   ],
   "channels": {
     "telegram": {

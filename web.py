@@ -461,10 +461,18 @@ def load_contacts_from_index(index_path: Path, contact_type: str) -> list[dict]:
 
 @app.get("/api/meta")
 async def meta():
-    """Returns business config needed by the frontend — contact types, labels."""
+    """Returns business config needed by the frontend — contact types, labels, quick questions."""
     return {
         "business": BUSINESS_NAME,
         "contacts": [{"type": c["type"], "label": c["label"]} for c in CONTACTS_CONFIG],
+        "quick_questions": CONFIG.get("quick_questions", [
+            "Any urgent matters?",
+            "Who needs follow-up?",
+            "Today's schedule",
+            "Stock levels",
+            "Recent leads",
+            "Overdue clients",
+        ]),
     }
 
 
