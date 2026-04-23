@@ -114,6 +114,11 @@ function attachStaticListeners() {
   document.getElementById('waClose').addEventListener('click', closeWaModal);
   document.getElementById('waOverlay').addEventListener('click', closeWaModal);
 
+  // Channels (Meta) connect modal
+  document.getElementById('hsChannels').addEventListener('click', openChannelsModal);
+  document.getElementById('channelsClose').addEventListener('click', closeChannelsModal);
+  document.getElementById('channelsOverlay').addEventListener('click', closeChannelsModal);
+
   // Activity modal
   document.getElementById('activityClose').addEventListener('click', closeActivity);
   document.getElementById('activityOverlay').addEventListener('click', closeActivity);
@@ -135,6 +140,8 @@ function attachStaticListeners() {
     if (e.key !== 'Escape') return;
     if (document.getElementById('calEventModal').classList.contains('open')) {
       closeCalEventModal();
+    } else if (document.getElementById('channelsModal').classList.contains('open')) {
+      closeChannelsModal();
     } else if (document.getElementById('waModal').classList.contains('open')) {
       closeWaModal();
     } else if (document.getElementById('feedbackModal').classList.contains('open')) {
@@ -444,6 +451,11 @@ function approvalCard(a, isNewArrival = false) {
     nameHTML = `<div class="card-name">${esc(a.sender_name || a.identifier)}</div>`;
   }
 
+  const winBadge = formatWindowRemaining(a.last_inbound_at, a.channel);
+  const badgeHTML = winBadge
+    ? `<span class="win-badge ${winBadge.cls}" data-window-badge data-last-inbound="${escAttr(a.last_inbound_at)}" data-channel="${esc(a.channel)}">${esc(winBadge.label)}</span>`
+    : '';
+
   return `
     <div class="card ${triage}${arrivalCls}" data-approval-id="${esc(a.id)}" tabindex="0">
       ${ribbon}
@@ -451,7 +463,7 @@ function approvalCard(a, isNewArrival = false) {
         <div class="avatar" style="background:${avatarColor(a.sender_name || a.identifier)}">${initials}</div>
         <div class="card-meta">
           ${nameHTML}
-          <div class="card-sub">${channelChip} ${esc(a.identifier || '')}</div>
+          <div class="card-sub">${channelChip} ${esc(a.identifier || '')} ${badgeHTML}</div>
         </div>
         <div class="card-time">${esc(a.time_ago || '')}</div>
       </div>
@@ -460,6 +472,20 @@ function approvalCard(a, isNewArrival = false) {
       </div>
     </div>`;
 }
+
+// Re-compute all visible window badges every 30s so the countdown ticks
+function refreshWindowBadges() {
+  document.querySelectorAll('[data-window-badge]').forEach(el => {
+    const last = el.getAttribute('data-last-inbound');
+    const ch = el.getAttribute('data-channel');
+    const r = formatWindowRemaining(last, ch);
+    if (!r) return;
+    el.textContent = r.label;
+    el.classList.remove('win-ok', 'win-warn', 'win-urgent', 'win-expired');
+    el.classList.add(r.cls);
+  });
+}
+setInterval(refreshWindowBadges, 30000);
 
 function signalNewArrival(count) {
   toast(`🔔 ${count} new message${count > 1 ? 's' : ''}`);
@@ -504,11 +530,24 @@ async function openApproval(id) {
       titleHTML = `<div id="approvalPanelTitle" class="panel-title">${esc(a.sender_name || a.identifier)}</div>`;
     }
 
+    const badge = formatWindowRemaining(a.last_inbound_at, a.channel);
+    const badgeHTML = badge
+      ? `<span class="win-badge ${badge.cls}" title="Time left to reply">${esc(badge.label)}</span>`
+      : '';
+
+    const awaitingDone = a.manual_send_state === 'awaiting_done';
+    const awaitingBanner = awaitingDone ? `
+      <div class="awaiting-done-banner">
+        <strong>Waiting for you to send this in ${esc(channelDisplay(a.channel))}.</strong><br>
+        Paste the copied draft into the conversation, then click <em>Done</em> to log it here.
+      </div>` : '';
+
     content.innerHTML = `
       ${titleHTML}
-      <div class="panel-subtitle">${esc(a.identifier || '')} · ${esc(a.channel || '')} · ${esc(a.time_ago || '')}</div>
+      <div class="panel-subtitle">${esc(a.identifier || '')} · ${esc(channelDisplay(a.channel))} · ${esc(a.time_ago || '')} ${badgeHTML}</div>
 
       ${senderContextHTML}
+      ${awaitingBanner}
 
       <div class="section-label">Their message</div>
       <div class="message-bubble">${esc(a.original_message)}</div>
@@ -529,16 +568,23 @@ async function openApproval(id) {
       <button class="btn btn-ghost" id="regenerateBtn" style="width:100%;margin-top:6px">✏️ Regenerate draft</button>
     `;
 
-    const acceptLabel = a.channel === 'whatsapp'
-      ? '✅ Send via WhatsApp'
-      : '✅ Approve &amp; copy';
-    actions.innerHTML = `
-      <button class="btn btn-danger"  id="rejectBtn">❌ Reject</button>
-      <button class="btn btn-success" id="acceptBtn" style="grid-column:span 2">${acceptLabel}</button>
-    `;
+    // Choose action buttons based on state
+    const acceptLabel = getAcceptLabel(a);
+    if (awaitingDone) {
+      actions.innerHTML = `
+        <button class="btn btn-danger"  id="rejectBtn">❌ Reject</button>
+        <button class="btn btn-success" id="doneBtn" style="grid-column:span 2">✅ Done — mark as sent</button>
+      `;
+      document.getElementById('doneBtn').addEventListener('click', markDone);
+    } else {
+      actions.innerHTML = `
+        <button class="btn btn-danger"  id="rejectBtn">❌ Reject</button>
+        <button class="btn btn-success" id="acceptBtn" style="grid-column:span 2">${acceptLabel}</button>
+      `;
+      document.getElementById('acceptBtn').addEventListener('click', acceptApproval);
+    }
 
     document.getElementById('rejectBtn').addEventListener('click', rejectApproval);
-    document.getElementById('acceptBtn').addEventListener('click', acceptApproval);
     document.getElementById('regenerateBtn').addEventListener('click', editDraft);
 
     // Focus draft for quick editing
@@ -593,22 +639,153 @@ async function acceptApproval() {
   const draft = document.getElementById('draftText').value.trim();
   if (!draft) { toast('Draft is empty'); return; }
 
-  // Save edits to draft first
+  // Save edits first so whichever send path we take uses the latest text
   try { await api(`/api/approvals/${id}/draft`, 'POST', { draft }); }
   catch (_) {}
 
-  // Copy draft to clipboard for manual sending
+  // Fetch fresh state to know channel + window status
+  let a;
+  try { a = await api(`/api/approvals/${id}`); }
+  catch (e) { toast('Failed to reload approval: ' + e.message); return; }
+
+  const needsEscape = isMetaChannel(a.channel) && !withinWindow(a.last_inbound_at);
+
+  if (needsEscape) {
+    return acceptViaEscapeHatch(id, a, draft);
+  }
+
+  // Copy to clipboard — useful for web/whatsapp channels; harmless otherwise
   try { await navigator.clipboard.writeText(draft); }
   catch (_) {}
 
-  // Optimistic UI: close panel, show undo toast
   closePanel('approval');
   optimisticAction(id, 'send', async () => {
-    await api(`/api/approvals/${id}/accept`, 'POST');
+    try {
+      await api(`/api/approvals/${id}/accept`, 'POST');
+    } catch (e) {
+      // Server-side window check may disagree with the client — fall back
+      if (e.message === 'outside_window') {
+        toast('Window just closed — opening platform to send manually');
+        return acceptViaEscapeHatch(id, a, draft);
+      }
+      throw e;
+    }
     loadApprovals();
     loadStatus();
-    toast('Approved — draft copied to clipboard');
+    toast('Approved');
   });
+}
+
+async function acceptViaEscapeHatch(id, a, draft) {
+  // 1) Copy draft to clipboard
+  try { await navigator.clipboard.writeText(draft); }
+  catch (_) { toast('Copy the draft manually — clipboard was blocked'); }
+
+  // 2) Open the platform in a new tab
+  const url = getPlatformDeepLink(a);
+  window.open(url, '_blank', 'noopener,noreferrer');
+
+  // 3) Mark server-side so card flips to Done state
+  try {
+    await api(`/api/approvals/${id}/mark-awaiting-done`, 'POST');
+  } catch (e) {
+    toast('Failed to flag as awaiting-done: ' + e.message);
+    return;
+  }
+
+  // 4) Refresh the approval panel so the banner + Done button render
+  loadApprovals();
+  openApproval(id);
+  toast('Draft copied. Paste in the thread, then click Done.');
+}
+
+async function markDone() {
+  const id = State.currentApprovalId;
+  closePanel('approval');
+  optimisticAction(id, 'send', async () => {
+    await api(`/api/approvals/${id}/done`, 'POST');
+    loadApprovals();
+    loadStatus();
+    toast('Marked as sent ✓');
+  });
+}
+
+// ------------------------------------------------------------------ //
+// Channel helpers
+// ------------------------------------------------------------------ //
+
+function isMetaChannel(ch) {
+  return ch === 'messenger' || ch === 'instagram';
+}
+
+function channelDisplay(ch) {
+  return {
+    whatsapp: 'WhatsApp',
+    messenger: 'Messenger',
+    instagram: 'Instagram',
+    telegram: 'Telegram',
+    web: 'Web',
+    email: 'Email',
+  }[ch] || ch || '';
+}
+
+function getAcceptLabel(a) {
+  if (a.channel === 'whatsapp') return '✅ Send via WhatsApp';
+  if (isMetaChannel(a.channel)) {
+    return withinWindow(a.last_inbound_at)
+      ? `✅ Send via ${channelDisplay(a.channel)}`
+      : `📋 Copy &amp; open ${channelDisplay(a.channel)}`;
+  }
+  return '✅ Approve &amp; copy';
+}
+
+function withinWindow(last_inbound_at) {
+  if (!last_inbound_at) return false;
+  // last_inbound_at is stored as 'YYYY-MM-DD HH:MM:SS' UTC. Normalise to Date.
+  const t = Date.parse(last_inbound_at.replace(' ', 'T') + 'Z');
+  if (isNaN(t)) return false;
+  return (Date.now() - t) < 24 * 60 * 60 * 1000;
+}
+
+function formatWindowRemaining(last_inbound_at, channel) {
+  // Show on any channel where a 24h window is relevant. We show it on
+  // WhatsApp too because "how long since they messaged me" is a useful
+  // signal even when Baileys doesn't enforce the window.
+  if (!last_inbound_at) return null;
+  if (!['whatsapp', 'messenger', 'instagram'].includes(channel)) return null;
+  const t = Date.parse(last_inbound_at.replace(' ', 'T') + 'Z');
+  if (isNaN(t)) return null;
+  const elapsedMs = Date.now() - t;
+  const remainingMs = 24 * 60 * 60 * 1000 - elapsedMs;
+  if (remainingMs <= 0) return { label: 'expired', cls: 'win-expired' };
+  const totalMin = Math.floor(remainingMs / 60000);
+  const hours = Math.floor(totalMin / 60);
+  const mins = totalMin % 60;
+  const label = hours > 0 ? `${hours}h ${mins}m left` : `${mins}m left`;
+  let cls;
+  if (remainingMs > 6 * 3600 * 1000) cls = 'win-ok';
+  else if (remainingMs > 2 * 3600 * 1000) cls = 'win-warn';
+  else cls = 'win-urgent';
+  return { label, cls };
+}
+
+function getPlatformDeepLink(a) {
+  // Best-available link into the thread. Messenger/Instagram do not support
+  // prefill URLs — user lands on Business Suite inbox with clipboard primed.
+  if (a.channel === 'messenger') {
+    return 'https://business.facebook.com/latest/inbox';
+  }
+  if (a.channel === 'instagram') {
+    if (a.thread_id) return `https://www.instagram.com/direct/t/${encodeURIComponent(a.thread_id)}/`;
+    return 'https://www.instagram.com/direct/inbox/';
+  }
+  if (a.channel === 'whatsapp') {
+    // Baileys sends directly — but if this ever gets called, wa.me prefills text
+    const phone = (a.identifier || '').replace(/[^0-9]/g, '');
+    const text = encodeURIComponent(document.getElementById('draftText')?.value || '');
+    return `https://wa.me/${phone}?text=${text}`;
+  }
+  return 'https://business.facebook.com/latest/inbox';
 }
 
 async function rejectApproval() {
@@ -1675,4 +1852,188 @@ async function waDisconnect() {
     const d = await res.json();
     updateWaHeaderPill(d.state, d.phone);
   } catch (e) { /* ignore */ }
+})();
+
+// ------------------------------------------------------------------ //
+// Channels (Meta: Messenger + Instagram) connect modal
+// ------------------------------------------------------------------ //
+
+async function openChannelsModal() {
+  State.lastFocus = document.activeElement;
+  document.getElementById('channelsOverlay').classList.add('open');
+  document.getElementById('channelsModal').classList.add('open');
+  renderChannelsModal({ loading: true });
+  await refreshChannelsModal();
+}
+
+function closeChannelsModal() {
+  document.getElementById('channelsOverlay').classList.remove('open');
+  document.getElementById('channelsModal').classList.remove('open');
+  if (State.lastFocus) State.lastFocus.focus();
+}
+
+async function refreshChannelsModal() {
+  try {
+    const status = await api('/api/channels/meta/status');
+    renderChannelsModal(status);
+    updateChannelsHeaderPill(status);
+  } catch (e) {
+    renderChannelsModal({ error: e.message });
+  }
+}
+
+function updateChannelsHeaderPill(status) {
+  const label = document.getElementById('hsChannelsLabel');
+  if (!label) return;
+  const count = (status.connections || []).filter(c => c.status === 'connected').length;
+  label.textContent = count > 0 ? `Channels (${count})` : 'Channels';
+}
+
+function renderChannelsModal(data) {
+  const body = document.getElementById('channelsBody');
+  if (!body) return;
+
+  if (data.loading) {
+    body.innerHTML = '<div class="text-center py-6 text-[var(--muted)]">Loading…</div>';
+    return;
+  }
+  if (data.error) {
+    body.innerHTML = `<div class="text-center py-6" style="color:var(--danger)">${esc(data.error)}</div>`;
+    return;
+  }
+
+  const configured = data.configured;
+  const conns = Object.fromEntries((data.connections || []).map(c => [c.channel, c]));
+  const mess = conns['messenger'];
+  const ig = conns['instagram'];
+
+  const row = (channel, label, icon, conn) => {
+    if (!configured) {
+      return `
+        <div class="ch-row">
+          <div class="ch-icon">${icon}</div>
+          <div class="ch-meta">
+            <div class="ch-name">${label}</div>
+            <div class="ch-status text-[var(--muted)]">Not configured yet</div>
+          </div>
+        </div>`;
+    }
+    if (conn && conn.status === 'connected') {
+      const name = conn.page_name || conn.page_id;
+      return `
+        <div class="ch-row">
+          <div class="ch-icon">${icon}</div>
+          <div class="ch-meta">
+            <div class="ch-name">${label}</div>
+            <div class="ch-status" style="color:#059669">✓ Connected as ${esc(name)}</div>
+          </div>
+          <button class="btn btn-ghost" data-disconnect="${channel}">Disconnect</button>
+        </div>`;
+    }
+    if (conn && conn.status === 'needs_reconnect') {
+      return `
+        <div class="ch-row">
+          <div class="ch-icon">${icon}</div>
+          <div class="ch-meta">
+            <div class="ch-name">${label}</div>
+            <div class="ch-status" style="color:#b91c1c">⚠ Token expired — reconnect needed</div>
+          </div>
+          <button class="btn btn-primary" data-connect="${channel}">Reconnect</button>
+        </div>`;
+    }
+    return `
+      <div class="ch-row">
+        <div class="ch-icon">${icon}</div>
+        <div class="ch-meta">
+          <div class="ch-name">${label}</div>
+          <div class="ch-status text-[var(--muted)]">Not connected</div>
+        </div>
+        <button class="btn btn-primary" data-connect="${channel}">Connect</button>
+      </div>`;
+  };
+
+  const configNote = !configured ? `
+    <div class="ch-note">
+      Your Meta App isn't configured on this tenant yet. An admin needs to set
+      <code>META_APP_ID</code>, <code>META_APP_SECRET</code>, <code>META_VERIFY_TOKEN</code>,
+      and <code>META_REDIRECT_URI</code> before Messenger/Instagram can be connected.
+      See <code>docs/meta-app-setup.md</code>.
+    </div>` : '';
+
+  body.innerHTML = `
+    <div class="ch-list">
+      ${row('messenger', 'Facebook Messenger', '💬', mess)}
+      ${row('instagram', 'Instagram Direct', '📸', ig)}
+    </div>
+    ${configNote}
+    <div class="text-xs text-[var(--muted)] mt-4">
+      WhatsApp is managed separately — see the WhatsApp button.
+    </div>`;
+
+  body.querySelectorAll('[data-connect]').forEach(btn => {
+    btn.addEventListener('click', () => startMetaConnect(btn.dataset.connect));
+  });
+  body.querySelectorAll('[data-disconnect]').forEach(btn => {
+    btn.addEventListener('click', () => disconnectMeta(btn.dataset.disconnect));
+  });
+}
+
+async function startMetaConnect(_channel) {
+  try {
+    const r = await api('/api/channels/meta/login-url');
+    // Open the Facebook OAuth dialog in a popup. After they complete it,
+    // the callback redirects back to /?meta_connected=1. We poll every 2s
+    // to catch the state change.
+    const popup = window.open(r.url, 'meta_oauth', 'width=600,height=700');
+    if (!popup) {
+      toast('Popup blocked — please allow popups and try again');
+      return;
+    }
+    const poll = setInterval(async () => {
+      try {
+        if (popup.closed) {
+          clearInterval(poll);
+          await refreshChannelsModal();
+          return;
+        }
+      } catch (_) { /* cross-origin during OAuth is fine */ }
+    }, 2000);
+  } catch (e) {
+    toast('Failed to start: ' + e.message);
+  }
+}
+
+async function disconnectMeta(channel) {
+  if (!confirm(`Disconnect ${channel}? Inbound messages will stop arriving until you reconnect.`)) return;
+  try {
+    await api('/api/channels/meta/disconnect', 'POST', { channel });
+    await refreshChannelsModal();
+    toast('Disconnected');
+  } catch (e) {
+    toast('Disconnect failed: ' + e.message);
+  }
+}
+
+// Initial status check on page load — updates the header pill silently
+(async function channelsInitialStatus() {
+  try {
+    const r = await fetch('/api/channels/meta/status');
+    if (!r.ok) return;
+    const d = await r.json();
+    updateChannelsHeaderPill(d);
+  } catch (_) { /* ignore */ }
+})();
+
+// Detect OAuth callback redirect: ?meta_connected=1 or ?meta_error=...
+(function detectOAuthReturn() {
+  const params = new URLSearchParams(location.search);
+  if (params.has('meta_connected')) {
+    toast('✓ Channel connected');
+    // Strip the query param so reload doesn't re-toast
+    history.replaceState({}, '', location.pathname);
+    setTimeout(refreshChannelsModal, 500);
+  } else if (params.has('meta_error')) {
+    toast('Connection failed: ' + params.get('meta_error'));
+    history.replaceState({}, '', location.pathname);
+  }
 })();

@@ -18,6 +18,43 @@ def get_db() -> sqlite3.Connection:
     return conn
 
 
+# ------------------------------------------------------------------
+# Token encryption (Fernet, per-tenant key via env)
+# ------------------------------------------------------------------
+# TENANT_ENCRYPTION_KEY is a urlsafe base64-encoded 32-byte key generated
+# per tenant at provision time. It encrypts Meta access tokens at rest so a
+# dump of crm.db alone doesn't expose them.
+
+from cryptography.fernet import Fernet, InvalidToken  # noqa: E402
+
+_FERNET = None
+
+
+def _fernet() -> Fernet:
+    global _FERNET
+    if _FERNET is None:
+        key = os.environ.get('TENANT_ENCRYPTION_KEY')
+        if not key:
+            raise RuntimeError(
+                "TENANT_ENCRYPTION_KEY env var is not set. "
+                "Generate one with: python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
+            )
+        _FERNET = Fernet(key.encode() if isinstance(key, str) else key)
+    return _FERNET
+
+
+def encrypt_secret(text: str) -> str:
+    if text is None:
+        return None
+    return _fernet().encrypt(text.encode()).decode()
+
+
+def decrypt_secret(ciphertext: str) -> str:
+    if ciphertext is None:
+        return None
+    return _fernet().decrypt(ciphertext.encode()).decode()
+
+
 def init_db():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     with get_db() as conn:
@@ -61,6 +98,17 @@ def init_db():
         except sqlite3.OperationalError:
             pass  # column already exists
 
+        # Migration: 24h window anchor + manual-send state for Meta channels
+        for col_sql in (
+            "ALTER TABLE pending_approvals ADD COLUMN last_inbound_at TEXT",
+            "ALTER TABLE pending_approvals ADD COLUMN manual_send_state TEXT",
+            "ALTER TABLE pending_approvals ADD COLUMN thread_id TEXT",
+        ):
+            try:
+                conn.execute(col_sql)
+            except sqlite3.OperationalError:
+                pass
+
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS feedback (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -86,6 +134,32 @@ def init_db():
                 created_at      TEXT DEFAULT (datetime('now')),
                 updated_at      TEXT DEFAULT (datetime('now'))
             );
+
+            CREATE TABLE IF NOT EXISTS channel_connections (
+                id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+                channel                 TEXT NOT NULL,   -- 'messenger' | 'instagram'
+                page_id                 TEXT,
+                page_name               TEXT,
+                page_username           TEXT,
+                ig_business_account_id  TEXT,
+                access_token_encrypted  TEXT,
+                scopes                  TEXT,
+                status                  TEXT DEFAULT 'connected',  -- 'connected' | 'needs_reconnect' | 'disconnected'
+                connected_at            TEXT DEFAULT (datetime('now')),
+                last_validated_at       TEXT,
+                UNIQUE(channel)
+            );
+
+            CREATE TABLE IF NOT EXISTS message_threads (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                channel         TEXT NOT NULL,
+                identifier      TEXT NOT NULL,   -- PSID for Messenger, IGSID for Instagram
+                thread_id       TEXT,            -- Instagram thread ID if resolvable
+                page_id         TEXT,
+                last_inbound_at TEXT,
+                created_at      TEXT DEFAULT (datetime('now')),
+                UNIQUE(channel, identifier)
+            );
         """)
 
 
@@ -95,15 +169,18 @@ def init_db():
 
 def create_approval(approval_id: str, identifier: str, identifier_type: str,
                     channel: str, sender_name: str, original_message: str,
-                    analysis: str, draft: str, kind: str = 'inbound'):
+                    analysis: str, draft: str, kind: str = 'inbound',
+                    last_inbound_at: str = None, thread_id: str = None):
     with get_db() as conn:
         conn.execute("""
             INSERT INTO pending_approvals
                 (id, identifier, identifier_type, channel, sender_name,
-                 original_message, analysis, draft, kind)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 original_message, analysis, draft, kind,
+                 last_inbound_at, thread_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (approval_id, identifier, identifier_type, channel, sender_name,
-              original_message, analysis, draft, kind))
+              original_message, analysis, draft, kind,
+              last_inbound_at, thread_id))
 
 
 def get_approvals(status: str = 'pending') -> list[dict]:
@@ -250,6 +327,104 @@ def delete_calendar_event(event_id: str):
             "UPDATE calendar_events SET status = 'cancelled', updated_at = ? WHERE id = ?",
             (datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S'), event_id)
         )
+
+
+# ------------------------------------------------------------------
+# Channel connections (Meta Messenger / Instagram)
+# ------------------------------------------------------------------
+
+def save_channel_connection(channel: str, page_id: str, page_name: str,
+                            access_token: str, scopes: str = '',
+                            page_username: str = '',
+                            ig_business_account_id: str = ''):
+    """Upsert a channel connection. Token is encrypted at rest."""
+    encrypted = encrypt_secret(access_token)
+    with get_db() as conn:
+        conn.execute("""
+            INSERT INTO channel_connections
+                (channel, page_id, page_name, page_username,
+                 ig_business_account_id, access_token_encrypted, scopes,
+                 status, connected_at, last_validated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'connected', datetime('now'), datetime('now'))
+            ON CONFLICT(channel) DO UPDATE SET
+                page_id=excluded.page_id,
+                page_name=excluded.page_name,
+                page_username=excluded.page_username,
+                ig_business_account_id=excluded.ig_business_account_id,
+                access_token_encrypted=excluded.access_token_encrypted,
+                scopes=excluded.scopes,
+                status='connected',
+                last_validated_at=datetime('now')
+        """, (channel, page_id, page_name, page_username,
+              ig_business_account_id, encrypted, scopes))
+
+
+def get_channel_connection(channel: str, decrypt_token: bool = False) -> dict | None:
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM channel_connections WHERE channel = ?", (channel,)
+        ).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        if decrypt_token and d.get('access_token_encrypted'):
+            d['access_token'] = decrypt_secret(d['access_token_encrypted'])
+        # Never leak the ciphertext to callers that don't need it
+        d.pop('access_token_encrypted', None)
+        return d
+
+
+def list_channel_connections() -> list[dict]:
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT channel, page_id, page_name, page_username, "
+            "ig_business_account_id, status, connected_at, last_validated_at "
+            "FROM channel_connections"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def update_channel_connection(channel: str, **kwargs):
+    if not kwargs:
+        return
+    fields = ', '.join(f"{k} = ?" for k in kwargs)
+    values = list(kwargs.values()) + [channel]
+    with get_db() as conn:
+        conn.execute(
+            f"UPDATE channel_connections SET {fields} WHERE channel = ?", values
+        )
+
+
+def delete_channel_connection(channel: str):
+    with get_db() as conn:
+        conn.execute("DELETE FROM channel_connections WHERE channel = ?", (channel,))
+
+
+# ------------------------------------------------------------------
+# Message threads (per-contact last-inbound tracking)
+# ------------------------------------------------------------------
+
+def upsert_message_thread(channel: str, identifier: str, last_inbound_at: str,
+                          thread_id: str = None, page_id: str = None):
+    with get_db() as conn:
+        conn.execute("""
+            INSERT INTO message_threads
+                (channel, identifier, thread_id, page_id, last_inbound_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(channel, identifier) DO UPDATE SET
+                thread_id=COALESCE(excluded.thread_id, message_threads.thread_id),
+                page_id=COALESCE(excluded.page_id, message_threads.page_id),
+                last_inbound_at=excluded.last_inbound_at
+        """, (channel, identifier, thread_id, page_id, last_inbound_at))
+
+
+def get_message_thread(channel: str, identifier: str) -> dict | None:
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM message_threads WHERE channel = ? AND identifier = ?",
+            (channel, identifier)
+        ).fetchone()
+        return dict(row) if row else None
 
 
 # Initialise on import

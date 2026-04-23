@@ -12,7 +12,7 @@
       darkMode: ['selector', '[data-theme="dark"]'],
     }
   </script>
-  <link rel="stylesheet" href="/static/style.css?v=7">
+  <link rel="stylesheet" href="/static/style.css?v=8">
   <style type="text/tailwindcss">
     /* ── Focus ── */
     :focus-visible {
@@ -156,6 +156,61 @@
     .badge-corporate { background: #ede9fe; color: #5b21b6; }
     .badge-urgent   { background: #fee2e2; color: #991b1b; }
     .badge-new      { background: #fef9c3; color: #713f12; }
+
+    /* 24h reply-window badges */
+    .win-badge {
+      display: inline-block;
+      font-size: 0.7rem;
+      font-weight: 600;
+      padding: 1px 7px;
+      border-radius: 999px;
+      margin-left: 6px;
+      vertical-align: middle;
+    }
+    .win-ok       { background: #dcfce7; color: #166534; }
+    .win-warn     { background: #fef9c3; color: #713f12; }
+    .win-urgent   { background: #fee2e2; color: #991b1b; }
+    .win-expired  { background: #e5e7eb; color: #4b5563; text-decoration: line-through; }
+
+    .awaiting-done-banner {
+      background: #fef3c7;
+      color: #78350f;
+      border: 1px solid #fde68a;
+      border-radius: 10px;
+      padding: 10px 12px;
+      margin: 10px 0;
+      font-size: 0.85rem;
+      line-height: 1.4;
+    }
+
+    /* Channels modal rows */
+    .ch-list { display: flex; flex-direction: column; gap: 10px; }
+    .ch-row {
+      display: flex; align-items: center; gap: 12px;
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface);
+    }
+    .ch-icon { font-size: 1.8rem; width: 40px; text-align: center; }
+    .ch-meta { flex: 1; min-width: 0; }
+    .ch-name { font-weight: 600; font-size: 0.95rem; }
+    .ch-status { font-size: 0.8rem; margin-top: 2px; }
+    .ch-note {
+      margin-top: 14px;
+      padding: 10px 12px;
+      background: #fef3c7;
+      color: #78350f;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      line-height: 1.4;
+    }
+    .ch-note code {
+      background: rgba(0,0,0,0.08);
+      padding: 1px 4px;
+      border-radius: 3px;
+      font-size: 0.78rem;
+    }
 
     /* ── Buttons ── */
     .btn {
@@ -647,6 +702,10 @@
         <span id="hsWaIcon">💬</span>
         <span id="hsWaLabel">WhatsApp</span>
       </button>
+      <button class="hs-item" id="hsChannels" aria-label="Connect Messenger or Instagram">
+        <span>🔗</span>
+        <span id="hsChannelsLabel">Channels</span>
+      </button>
       <button class="hs-item" id="hsFeedback" aria-label="Feature request">
         <span>💡</span>
         <span>Feedback</span>
@@ -871,6 +930,18 @@
     </div>
   </div>
 
+  <!-- Channels (Messenger + Instagram) connect modal -->
+  <div class="activity-overlay" id="channelsOverlay"></div>
+  <div class="activity-modal" id="channelsModal" role="dialog" aria-modal="true" aria-labelledby="channelsTitle">
+    <div class="activity-modal-header">
+      <div id="channelsTitle">🔗 Connect Channels</div>
+      <button class="activity-close" id="channelsClose" aria-label="Close">&#10005;</button>
+    </div>
+    <div class="activity-modal-body p-4" id="channelsBody">
+      <!-- Filled dynamically by renderChannelsModal() -->
+    </div>
+  </div>
+
   <!-- WhatsApp connect modal -->
   <div class="activity-overlay" id="waOverlay"></div>
   <div class="activity-modal" id="waModal" role="dialog" aria-modal="true" aria-labelledby="waTitle">
@@ -928,6 +999,6 @@
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
-<script src="/static/app.js?v=7"></script>
+<script src="/static/app.js?v=8"></script>
 </body>
 </html>

@@ -21,6 +21,17 @@ Every message arrives with one of these prefixes:
 | `[COMPOSE]` | Owner initiating outbound | Read contact file → draft proactive message |
 | `[POST_SEND]` | Bridge confirming a reply was sent | Update CRM only, no output |
 
+### Supported channels
+
+| Channel | `channel` value | `identifier_type` | Identifier format |
+|---------|-----------------|-------------------|-------------------|
+| WhatsApp | `whatsapp` | `whatsapp` | E.164 phone (e.g. `+6591234567`) |
+| Messenger | `messenger` | `messenger` | PSID — numeric string, page-scoped user ID. Not human-readable. |
+| Instagram | `instagram` | `instagram` | IGSID — numeric string, Instagram-scoped user ID. Not human-readable. |
+| Telegram | `telegram` | `telegram_id` | Numeric Telegram user ID |
+| Web (dashboard submit) | `web` | `phone` \| `email` \| `ip` | Whatever was submitted |
+| Email | `email` | `email` | `user@example.com` |
+
 ---
 
 ## [INTERNAL] — Owner / Staff Question
@@ -40,12 +51,14 @@ No CRM updates required for internal queries.
 
 ### Step 1 — Identify the sender
 
-Extract any identifiers from the message metadata (phone, email, telegram_id, WhatsApp number, IP).
+Extract any identifiers from the message metadata (phone, email, telegram_id, WhatsApp number, Messenger PSID, Instagram IGSID, IP).
 
 Check in this order:
 1. Read `wiki/INDEX.md` — find which folders contain client/contact records
 2. Read the `_INDEX.md` in each contact folder — does any row match the identifier?
 3. If not found in any folder → new contact (will create lead on send)
+
+**For Messenger and Instagram** (identifier is a numeric PSID/IGSID that the customer cannot see): try to match by `sender_name` *first*, since the PSID/IGSID is unlikely to be in the wiki. Fall back to the numeric ID as the identifier if no name match — a lead will be created with the ID on send, and the owner can enrich it later.
 
 ### Step 2 — Read the wiki
 
@@ -125,8 +138,8 @@ Message format the bridge will send:
 ```
 [POST_SEND]
 contact_identifier: <value>
-identifier_type: <phone|email|whatsapp|telegram_id|ip>
-channel: <telegram|whatsapp|email>
+identifier_type: <phone|email|whatsapp|messenger|instagram|telegram_id|ip>
+channel: <telegram|whatsapp|messenger|instagram|email|web>
 is_new_contact: <true|false>
 contact_file: <path or NONE>
 original_message: <what the customer sent>
@@ -170,7 +183,7 @@ When creating a new lead at `wiki/leads/[slug].md`, use whatever is available:
 ## Profile
 - **Source:** [channel] — [identifier]
 - **Identifier:** [value]
-- **Identifier Type:** [phone|email|whatsapp|telegram_id|ip]
+- **Identifier Type:** [phone|email|whatsapp|messenger|instagram|telegram_id|ip]
 - **First Contact:** [YYYY-MM-DD]
 - **Status:** 🟡 New Lead
 

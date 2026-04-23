@@ -14,6 +14,14 @@ services:
     environment:
       - WHATSAPP_SIDECAR_URL=http://whatsapp:3000
       - WHATSAPP_WEBHOOK_SECRET=__WA_SECRET__
+      - TENANT_ENCRYPTION_KEY=__FERNET_KEY__
+      # Meta (Messenger/Instagram) connector env — populated after Meta App registration.
+      # See docs/meta-app-setup.md for how to obtain these.
+      - META_APP_ID=${META_APP_ID:-}
+      - META_APP_SECRET=${META_APP_SECRET:-}
+      - META_VERIFY_TOKEN=${META_VERIFY_TOKEN:-}
+      - META_GRAPH_VERSION=v18.0
+      - META_REDIRECT_URI=${META_REDIRECT_URI:-}
     networks:
       - tenant
     deploy:

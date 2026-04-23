@@ -208,6 +208,19 @@ async def accept_approval(approval_id: str):
         except Exception as e:
             raise HTTPException(status_code=502, detail=f"WhatsApp send error: {e}")
 
+    # Messenger / Instagram — only auto-send within the 24h window.
+    # Outside the window, reject here and let the client take the escape-hatch
+    # path via /mark-awaiting-done + /done.
+    if approval['channel'] in ('messenger', 'instagram'):
+        if not approval.get('identifier'):
+            raise HTTPException(status_code=400, detail="Missing recipient identifier")
+        if not _meta_window_open(approval.get('last_inbound_at')):
+            raise HTTPException(
+                status_code=409,
+                detail="outside_window",  # client switches to escape-hatch flow on this code
+            )
+        _meta_send(approval['channel'], approval['identifier'], approval['draft'])
+
     # Mark as accepted
     db.update_approval(approval_id, status='accepted')
     db.log_event(approval['identifier'], approval['identifier_type'],
@@ -239,6 +252,60 @@ async def reject_approval(approval_id: str):
     db.update_approval(approval_id, status='rejected')
     db.log_event(approval['identifier'], approval['identifier_type'],
                  approval['channel'], 'in', 'rejected', 'Draft rejected by owner')
+    return {"ok": True}
+
+
+@app.post("/api/approvals/{approval_id}/mark-awaiting-done")
+async def mark_awaiting_done(approval_id: str):
+    """
+    Client-initiated flip into the manual-send (escape-hatch) flow. The client
+    has already copied the draft to clipboard and opened the platform's chat
+    in a new tab; this marks the approval so it stays visible with a Done
+    button instead of being treated as unactioned.
+    """
+    approval = db.get_approval(approval_id)
+    if not approval:
+        raise HTTPException(status_code=404, detail="Approval not found")
+    if approval['status'] != 'pending':
+        raise HTTPException(status_code=400, detail="Approval already actioned")
+    db.update_approval(approval_id, manual_send_state='awaiting_done')
+    return {"ok": True, "state": "awaiting_done"}
+
+
+@app.post("/api/approvals/{approval_id}/done")
+async def mark_done(approval_id: str):
+    """
+    Owner has manually sent the message in the external platform. Close the
+    loop: mark accepted, log outbound, run POST_SEND for wiki/calendar updates.
+    """
+    approval = db.get_approval(approval_id)
+    if not approval:
+        raise HTTPException(status_code=404, detail="Approval not found")
+    if approval['status'] == 'accepted':
+        return {"ok": True, "already": True}
+    if approval.get('manual_send_state') != 'awaiting_done':
+        raise HTTPException(status_code=400, detail="Approval is not awaiting Done")
+
+    db.update_approval(approval_id, status='accepted', manual_send_state=None)
+    db.log_event(
+        approval['identifier'], approval['identifier_type'], approval['channel'],
+        'out', 'message_sent_manual', approval['draft'][:100],
+    )
+
+    # POST_SEND to update wiki + calendar, same as the auto-send path
+    is_new = 'New contact' in (approval['analysis'] or '')
+    prompt = (
+        f"[POST_SEND]\n"
+        f"contact_identifier: {approval['identifier']}\n"
+        f"identifier_type: {approval['identifier_type']}\n"
+        f"channel: {approval['channel']}\n"
+        f"is_new_contact: {'true' if is_new else 'false'}\n"
+        f"contact_file: NONE\n"
+        f"original_message: {approval['original_message']}\n"
+        f"sent_reply: {approval['draft']}"
+    )
+    call_claude(prompt)
+
     return {"ok": True}
 
 
@@ -815,6 +882,442 @@ async def wa_webhook(body: WhatsAppInbound, req: Request):
     asyncio.create_task(_analyse_inbox(approval_id, inbox_body))
 
     return {"id": approval_id, "status": "queued"}
+
+
+# ------------------------------------------------------------------
+# Routes — Meta (Messenger + Instagram) connectors
+# ------------------------------------------------------------------
+# Shared env:
+#   META_APP_ID / META_APP_SECRET — from Meta App Dashboard
+#   META_VERIFY_TOKEN — arbitrary string, must match what you configure
+#       in the Meta App's webhook subscription
+#   META_REDIRECT_URI — must match the OAuth redirect URI registered
+#       in the Meta App (e.g. https://hvac.chiefpa.com/api/channels/meta/callback)
+#   META_GRAPH_VERSION — defaults to v18.0
+
+import hashlib
+import hmac
+import time
+import secrets as _secrets
+from datetime import timedelta
+
+META_APP_ID = os.environ.get('META_APP_ID', '')
+META_APP_SECRET = os.environ.get('META_APP_SECRET', '')
+META_VERIFY_TOKEN = os.environ.get('META_VERIFY_TOKEN', '')
+META_GRAPH_VERSION = os.environ.get('META_GRAPH_VERSION', 'v18.0')
+META_REDIRECT_URI = os.environ.get('META_REDIRECT_URI', '')
+
+META_GRAPH_BASE = f"https://graph.facebook.com/{META_GRAPH_VERSION}"
+META_OAUTH_SCOPES = [
+    'pages_messaging',
+    'pages_manage_metadata',
+    'pages_show_list',
+    'instagram_basic',
+    'instagram_manage_messages',
+    'business_management',
+]
+
+# 24h window constant (Meta's free-form customer-service window)
+META_WINDOW_SECONDS = 24 * 60 * 60
+
+
+def _meta_configured() -> bool:
+    return bool(META_APP_ID and META_APP_SECRET and META_VERIFY_TOKEN)
+
+
+def _verify_meta_signature(raw_body: bytes, signature_header: str) -> bool:
+    """Verify X-Hub-Signature-256 = sha256=<hex> against the raw request body."""
+    if not signature_header or not signature_header.startswith('sha256='):
+        return False
+    if not META_APP_SECRET:
+        return False
+    expected = hmac.new(
+        META_APP_SECRET.encode(),
+        raw_body,
+        hashlib.sha256,
+    ).hexdigest()
+    provided = signature_header.split('=', 1)[1]
+    return hmac.compare_digest(expected, provided)
+
+
+def _extract_text(message: dict) -> Optional[str]:
+    """Extract a displayable text from a Messenger/Instagram message payload."""
+    if not message:
+        return None
+    text = message.get('text')
+    if text:
+        return text
+    attachments = message.get('attachments') or []
+    if attachments:
+        kinds = {a.get('type', 'file') for a in attachments}
+        if 'image' in kinds:
+            return '[image]'
+        if 'video' in kinds:
+            return '[video]'
+        if 'audio' in kinds:
+            return '[voice note]'
+        if 'location' in kinds:
+            return '[location]'
+        return f"[{next(iter(kinds))}]"
+    return None
+
+
+# ----- Webhook receiver -----------------------------------------------------
+
+@app.get("/api/webhook/meta")
+async def meta_webhook_verify(req: Request):
+    """
+    Meta's webhook verification handshake (one-time on setup).
+    Meta sends dotted query params (hub.mode, hub.challenge, hub.verify_token)
+    which FastAPI cannot map via regular parameter binding — read them raw.
+    """
+    q = req.query_params
+    mode = q.get('hub.mode')
+    token = q.get('hub.verify_token')
+    challenge = q.get('hub.challenge')
+    if mode == 'subscribe' and token and token == META_VERIFY_TOKEN:
+        from fastapi.responses import PlainTextResponse
+        return PlainTextResponse(challenge or '')
+    raise HTTPException(status_code=403, detail="verify token mismatch")
+
+
+@app.post("/api/webhook/meta")
+async def meta_webhook_receive(req: Request):
+    raw = await req.body()
+
+    # Signature check — skip if Meta isn't configured yet (dev)
+    if _meta_configured():
+        sig = req.headers.get('X-Hub-Signature-256', '')
+        if not _verify_meta_signature(raw, sig):
+            raise HTTPException(status_code=403, detail="invalid signature")
+
+    try:
+        payload = json.loads(raw.decode('utf-8') or '{}')
+    except Exception:
+        raise HTTPException(status_code=400, detail="malformed json")
+
+    obj = payload.get('object')
+    if obj == 'page':
+        asyncio.create_task(_process_meta_entries(payload.get('entry') or [], channel='messenger'))
+    elif obj == 'instagram':
+        asyncio.create_task(_process_meta_entries(payload.get('entry') or [], channel='instagram'))
+    else:
+        # Unknown object — acknowledge to avoid Meta retrying forever
+        print(f"[meta_webhook] ignoring object={obj}")
+
+    # Must 200 within ~20s
+    return {"received": True}
+
+
+async def _process_meta_entries(entries: list, channel: str):
+    """Convert Meta webhook entries into approvals + kick AI analysis."""
+    for entry in entries:
+        page_id = entry.get('id')
+        for msg_event in (entry.get('messaging') or []):
+            try:
+                await _ingest_meta_message(channel, page_id, msg_event)
+            except Exception as e:
+                print(f"[meta_ingest] failed: {e}")
+
+
+async def _ingest_meta_message(channel: str, page_id: str, msg_event: dict):
+    """Single message event → pending_approval + async AI analysis."""
+    sender_id = (msg_event.get('sender') or {}).get('id')
+    message = msg_event.get('message') or {}
+
+    # Skip echoes (Meta replaying our own sends) and read/delivery events
+    if message.get('is_echo'):
+        return
+    if not sender_id or not message:
+        return
+
+    text = _extract_text(message)
+    if not text:
+        return
+
+    # Timestamp — Meta sends ms since epoch
+    ts_ms = msg_event.get('timestamp') or int(time.time() * 1000)
+    last_inbound_at = datetime.utcfromtimestamp(ts_ms / 1000).strftime('%Y-%m-%d %H:%M:%S')
+
+    # Try to resolve a nicer sender name (best-effort; don't block on failure)
+    sender_name = await _resolve_meta_sender_name(channel, page_id, sender_id) or sender_id
+
+    # Upsert the thread anchor
+    db.upsert_message_thread(
+        channel=channel,
+        identifier=sender_id,
+        last_inbound_at=last_inbound_at,
+        page_id=page_id,
+        thread_id=msg_event.get('thread_id'),
+    )
+
+    approval_id = str(uuid.uuid4())[:8]
+    db.create_approval(
+        approval_id=approval_id,
+        identifier=sender_id,
+        identifier_type=channel,
+        channel=channel,
+        sender_name=sender_name,
+        original_message=text,
+        analysis='Analysing...',
+        draft='Generating draft...',
+        last_inbound_at=last_inbound_at,
+        thread_id=msg_event.get('thread_id'),
+    )
+    db.log_event(sender_id, channel, channel, 'in', 'message_received', text[:100])
+
+    # Kick AI analysis via the existing inbox pipeline
+    inbox_body = InboxSubmit(
+        sender_name=sender_name,
+        identifier=sender_id,
+        identifier_type=channel,
+        channel=channel,
+        message=text,
+    )
+    asyncio.create_task(_analyse_inbox(approval_id, inbox_body))
+
+
+async def _resolve_meta_sender_name(channel: str, page_id: str, sender_id: str) -> Optional[str]:
+    """Best-effort display-name lookup via the Page's access token."""
+    try:
+        conn = db.get_channel_connection(channel, decrypt_token=True)
+        if not conn or not conn.get('access_token'):
+            return None
+        # Messenger: GET /{PSID}?fields=name — supported with pages_messaging
+        # Instagram: not reliably supported on basic scope; return None to fall back
+        if channel == 'messenger':
+            resp = _rq.get(
+                f"{META_GRAPH_BASE}/{sender_id}",
+                params={'fields': 'name', 'access_token': conn['access_token']},
+                timeout=5,
+            )
+            if resp.ok:
+                return (resp.json() or {}).get('name')
+    except Exception:
+        pass
+    return None
+
+
+# ----- OAuth (Facebook Login) -----------------------------------------------
+
+def _sign_state(payload: str) -> str:
+    """Sign the CSRF state with the app secret so we can verify on callback."""
+    sig = hmac.new(
+        (META_APP_SECRET or 'dev').encode(),
+        payload.encode(),
+        hashlib.sha256,
+    ).hexdigest()[:32]
+    return f"{payload}.{sig}"
+
+
+def _verify_state(state: str) -> bool:
+    try:
+        payload, sig = state.rsplit('.', 1)
+        expected = hmac.new(
+            (META_APP_SECRET or 'dev').encode(),
+            payload.encode(),
+            hashlib.sha256,
+        ).hexdigest()[:32]
+        if not hmac.compare_digest(expected, sig):
+            return False
+        # Payload format: "<nonce>:<issued_at>"
+        issued_at = int(payload.split(':')[-1])
+        if time.time() - issued_at > 600:  # 10 min
+            return False
+        return True
+    except Exception:
+        return False
+
+
+@app.get("/api/channels/meta/login-url")
+async def meta_login_url():
+    if not _meta_configured():
+        raise HTTPException(status_code=503, detail="Meta App not configured on this tenant")
+    if not META_REDIRECT_URI:
+        raise HTTPException(status_code=503, detail="META_REDIRECT_URI not set")
+    state = _sign_state(f"{_secrets.token_urlsafe(16)}:{int(time.time())}")
+    url = (
+        f"https://www.facebook.com/{META_GRAPH_VERSION}/dialog/oauth"
+        f"?client_id={META_APP_ID}"
+        f"&redirect_uri={META_REDIRECT_URI}"
+        f"&scope={','.join(META_OAUTH_SCOPES)}"
+        f"&state={state}"
+        f"&response_type=code"
+    )
+    return {"url": url, "state": state}
+
+
+@app.get("/api/channels/meta/callback")
+async def meta_callback(code: str = None, state: str = None, error: str = None, error_description: str = None):
+    """Facebook OAuth redirect lands here. Exchange code, save tokens, redirect to UI."""
+    from fastapi.responses import RedirectResponse
+    if error:
+        return RedirectResponse(url=f"/?meta_error={error}")
+    if not code or not state or not _verify_state(state):
+        raise HTTPException(status_code=403, detail="invalid state")
+    if not _meta_configured() or not META_REDIRECT_URI:
+        raise HTTPException(status_code=503, detail="Meta App not configured")
+
+    # 1) Exchange code → short-lived user token
+    token_resp = _rq.get(
+        f"{META_GRAPH_BASE}/oauth/access_token",
+        params={
+            'client_id': META_APP_ID,
+            'client_secret': META_APP_SECRET,
+            'redirect_uri': META_REDIRECT_URI,
+            'code': code,
+        },
+        timeout=15,
+    )
+    if not token_resp.ok:
+        raise HTTPException(status_code=502, detail=f"token exchange failed: {token_resp.text}")
+    short_token = token_resp.json().get('access_token')
+
+    # 2) Exchange short-lived → long-lived user token (60 day)
+    ll_resp = _rq.get(
+        f"{META_GRAPH_BASE}/oauth/access_token",
+        params={
+            'grant_type': 'fb_exchange_token',
+            'client_id': META_APP_ID,
+            'client_secret': META_APP_SECRET,
+            'fb_exchange_token': short_token,
+        },
+        timeout=15,
+    )
+    long_user_token = (ll_resp.json() or {}).get('access_token') or short_token
+
+    # 3) List the user's Pages
+    pages_resp = _rq.get(
+        f"{META_GRAPH_BASE}/me/accounts",
+        params={'access_token': long_user_token, 'fields': 'id,name,username,access_token,instagram_business_account'},
+        timeout=15,
+    )
+    pages = (pages_resp.json() or {}).get('data') or []
+    if not pages:
+        return RedirectResponse(url="/?meta_error=no_pages")
+
+    # For v1: take the first Page. (Multi-page picker is a later enhancement.)
+    page = pages[0]
+    page_id = page.get('id')
+    page_name = page.get('name', '')
+    page_username = page.get('username', '')
+    page_token = page.get('access_token')
+    ig_id = (page.get('instagram_business_account') or {}).get('id', '')
+
+    # 4) Subscribe the Page to our app's webhook
+    try:
+        _rq.post(
+            f"{META_GRAPH_BASE}/{page_id}/subscribed_apps",
+            params={
+                'subscribed_fields': 'messages,messaging_postbacks,messaging_optins',
+                'access_token': page_token,
+            },
+            timeout=10,
+        )
+    except Exception as e:
+        print(f"[meta_oauth] subscribe failed: {e}")
+        # Non-fatal — user can re-subscribe later
+
+    # 5) Save both Messenger and (if present) Instagram connections
+    db.save_channel_connection(
+        channel='messenger',
+        page_id=page_id,
+        page_name=page_name,
+        page_username=page_username,
+        access_token=page_token,
+        scopes=','.join(META_OAUTH_SCOPES),
+    )
+    if ig_id:
+        db.save_channel_connection(
+            channel='instagram',
+            page_id=page_id,
+            page_name=page_name,
+            page_username=page_username,
+            ig_business_account_id=ig_id,
+            access_token=page_token,
+            scopes=','.join(META_OAUTH_SCOPES),
+        )
+
+    return RedirectResponse(url="/?meta_connected=1")
+
+
+@app.get("/api/channels/meta/status")
+async def meta_status():
+    return {
+        "configured": _meta_configured(),
+        "connections": db.list_channel_connections(),
+    }
+
+
+@app.post("/api/channels/meta/disconnect")
+async def meta_disconnect(body: dict):
+    channel = body.get('channel')
+    if channel not in ('messenger', 'instagram'):
+        raise HTTPException(status_code=400, detail="channel must be messenger|instagram")
+    conn = db.get_channel_connection(channel, decrypt_token=True)
+    if conn and conn.get('page_id') and conn.get('access_token'):
+        try:
+            _rq.delete(
+                f"{META_GRAPH_BASE}/{conn['page_id']}/subscribed_apps",
+                params={'access_token': conn['access_token']},
+                timeout=10,
+            )
+        except Exception as e:
+            print(f"[meta_disconnect] unsubscribe failed: {e}")
+    db.delete_channel_connection(channel)
+    return {"status": "disconnected"}
+
+
+# ----- Outbound send (Graph API) --------------------------------------------
+
+def _meta_send(channel: str, recipient_id: str, text: str) -> dict:
+    """
+    Send a free-form message via Graph API. Caller must have already
+    verified we're inside the 24h window. Returns Meta's response dict
+    on success or raises HTTPException on failure.
+    """
+    conn = db.get_channel_connection(channel, decrypt_token=True)
+    if not conn or not conn.get('access_token'):
+        raise HTTPException(status_code=503, detail=f"{channel} not connected")
+
+    payload = {
+        'recipient': {'id': recipient_id},
+        'message': {'text': text},
+        'messaging_type': 'RESPONSE',
+    }
+    if channel == 'instagram':
+        payload['messaging_product'] = 'instagram'
+
+    resp = _rq.post(
+        f"{META_GRAPH_BASE}/me/messages",
+        params={'access_token': conn['access_token']},
+        json=payload,
+        timeout=15,
+    )
+    if resp.ok:
+        return resp.json()
+
+    # Error handling: detect token-expired (code 190/200) and flip status
+    try:
+        err = resp.json().get('error') or {}
+        code = err.get('code')
+        if code in (190, 200):
+            db.update_channel_connection(channel, status='needs_reconnect')
+        detail = err.get('message') or resp.text
+    except Exception:
+        detail = resp.text
+    raise HTTPException(status_code=502, detail=f"{channel} send failed: {detail}")
+
+
+def _meta_window_open(last_inbound_at_str: str) -> bool:
+    """Check whether the 24h window is still open."""
+    if not last_inbound_at_str:
+        return False
+    try:
+        last_in = datetime.strptime(last_inbound_at_str, '%Y-%m-%d %H:%M:%S')
+    except ValueError:
+        return False
+    return (datetime.utcnow() - last_in) < timedelta(seconds=META_WINDOW_SECONDS)
 
 
 # ------------------------------------------------------------------
