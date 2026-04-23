@@ -12,7 +12,7 @@
       darkMode: ['selector', '[data-theme="dark"]'],
     }
   </script>
-  <link rel="stylesheet" href="/static/style.css?v=8">
+  <link rel="stylesheet" href="/static/style.css?v=10">
   <style type="text/tailwindcss">
     /* ── Focus ── */
     :focus-visible {
@@ -144,7 +144,8 @@
     }
     .card-meta { @apply flex-1 min-w-0; }
     .card-name { @apply font-semibold text-[0.95rem] whitespace-nowrap overflow-hidden text-ellipsis; }
-    .card-sub  { @apply text-[0.8rem] mt-0.5; color: var(--muted); }
+    .card-sub  { @apply text-[0.8rem] mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 min-w-0; color: var(--muted); }
+    .card-identifier { @apply whitespace-nowrap overflow-hidden text-ellipsis max-w-full; }
     .card-time { @apply text-xs whitespace-nowrap; color: var(--muted); }
     .card-body { @apply px-4 pb-3.5; }
     .card-preview { @apply text-sm line-clamp-2; color: var(--muted); }
@@ -999,6 +1000,6 @@
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
-<script src="/static/app.js?v=8"></script>
+<script src="/static/app.js?v=10"></script>
 </body>
 </html>

@@ -463,14 +463,40 @@ function approvalCard(a, isNewArrival = false) {
         <div class="avatar" style="background:${avatarColor(a.sender_name || a.identifier)}">${initials}</div>
         <div class="card-meta">
           ${nameHTML}
-          <div class="card-sub">${channelChip} ${esc(a.identifier || '')} ${badgeHTML}</div>
+          <div class="card-sub">
+            ${channelChip}
+            <span class="card-identifier">${esc(a.identifier || '')}</span>
+            ${badgeHTML}
+          </div>
         </div>
-        <div class="card-time">${esc(a.time_ago || '')}</div>
+        <div class="card-time">${esc(fmtLocalDate(a.created_at))}</div>
       </div>
       <div class="card-body">
         <div class="card-preview">${esc(a.original_message)}</div>
       </div>
     </div>`;
+}
+
+// Format a server-sent UTC timestamp as 'DD/MM HH:MM' in the viewer's
+// local timezone. Handles three shapes the backend produces:
+//   - 'YYYY-MM-DD HH:MM:SS'           (SQLite default, naive UTC)
+//   - 'YYYY-MM-DDTHH:MM:SS.ffffff+00:00' (ISO 8601 w/ tz)
+//   - 'YYYY-MM-DDTHH:MM:SSZ'          (ISO 8601 UTC)
+function fmtLocalDate(utc_str) {
+  if (!utc_str) return '';
+  let s = String(utc_str).trim();
+  // If there's no timezone indicator AND no 'T', treat as naive UTC
+  const hasTz = /([zZ]|[+-]\d{2}:?\d{2})$/.test(s);
+  const hasT = s.includes('T');
+  if (!hasTz) {
+    if (!hasT) s = s.replace(' ', 'T');
+    s += 'Z';
+  }
+  const t = Date.parse(s);
+  if (isNaN(t)) return utc_str;
+  const d = new Date(t);
+  const pad = n => String(n).padStart(2, '0');
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 // Re-compute all visible window badges every 30s so the countdown ticks
@@ -544,7 +570,7 @@ async function openApproval(id) {
 
     content.innerHTML = `
       ${titleHTML}
-      <div class="panel-subtitle">${esc(a.identifier || '')} · ${esc(channelDisplay(a.channel))} · ${esc(a.time_ago || '')} ${badgeHTML}</div>
+      <div class="panel-subtitle">${esc(a.identifier || '')} · ${esc(channelDisplay(a.channel))} · ${esc(fmtLocalDate(a.created_at))} ${badgeHTML}</div>
 
       ${senderContextHTML}
       ${awaitingBanner}
