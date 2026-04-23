@@ -12,7 +12,7 @@
       darkMode: ['selector', '[data-theme="dark"]'],
     }
   </script>
-  <link rel="stylesheet" href="/static/style.css?v=3">
+  <link rel="stylesheet" href="/static/style.css?v=5">
   <style type="text/tailwindcss">
     /* ── Focus ── */
     :focus-visible {
@@ -512,6 +512,82 @@
     .card-name-link:hover,
     .panel-title-link:hover { @apply underline; }
 
+    /* ── Calendar ── */
+    .cal-nav {
+      @apply flex items-center gap-2 mb-3;
+    }
+    .cal-nav-btn {
+      @apply py-1 px-2.5 rounded-lg text-sm font-medium cursor-pointer;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+    .cal-nav-btn:hover { background: var(--bg); }
+    .cal-nav-label {
+      @apply flex-1 text-center text-sm font-semibold;
+    }
+    .cal-today-btn {
+      @apply text-xs py-1 px-2;
+      color: var(--primary);
+      border-color: var(--primary);
+    }
+
+    .cal-day {
+      @apply mb-3;
+    }
+    .cal-day-header {
+      @apply text-xs font-bold uppercase tracking-wide py-1.5 px-1 mb-1 flex items-center gap-2;
+      color: var(--muted);
+    }
+    .cal-day-header.today {
+      color: var(--primary);
+    }
+    .cal-day-count {
+      @apply text-[0.65rem] font-bold py-0.5 px-2 rounded-xl;
+      background: var(--bg);
+      color: var(--muted);
+      border: 1px solid var(--border);
+    }
+
+    .cal-event {
+      @apply rounded-xl mb-1.5 p-3 px-3.5 cursor-pointer relative;
+      @apply transition-[border-color,transform,box-shadow] duration-150;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-left: 4px solid var(--primary);
+    }
+    @media (hover: hover) {
+      .cal-event:hover {
+        @apply -translate-y-px;
+        border-color: var(--primary);
+        box-shadow: var(--shadow);
+      }
+    }
+    .cal-event.type-review    { border-left-color: #8b5cf6; }
+    .cal-event.type-follow-up { border-left-color: var(--warning); }
+    .cal-event.type-call      { border-left-color: var(--success); }
+    .cal-event.type-submission { border-left-color: #ec4899; }
+    .cal-event.type-service   { border-left-color: #06b6d4; }
+    .cal-event.type-reminder  { border-left-color: var(--muted); }
+    .cal-event.status-completed { @apply opacity-60; }
+
+    .cal-event-time {
+      @apply text-xs font-semibold;
+      color: var(--primary);
+    }
+    .cal-event-title {
+      @apply text-sm font-semibold mt-0.5;
+    }
+    .cal-event-meta {
+      @apply text-xs mt-0.5;
+      color: var(--muted);
+    }
+
+    .cal-empty {
+      @apply text-center py-8 text-sm;
+      color: var(--muted);
+    }
+
     /* ── Desktop layout (>= 768px) ── */
     @media (min-width: 768px) {
       .main {
@@ -567,6 +643,10 @@
         <span>📥</span>
         <span id="hsPendingCount">0</span>
       </button>
+      <button class="hs-item" id="hsFeedback" aria-label="Feature request">
+        <span>💡</span>
+        <span>Feedback</span>
+      </button>
       <button class="hs-item" id="hsActivity" aria-label="Recent activity">
         <span>📊</span>
         <span>Activity</span>
@@ -591,6 +671,10 @@
       <button class="nav-btn" data-page="chat">
         <span class="icon">💬</span>
         <span>Ask AI</span>
+      </button>
+      <button class="nav-btn" data-page="calendar">
+        <span class="icon">📅</span>
+        <span>Calendar</span>
       </button>
       <button class="nav-btn" data-page="crm">
         <span class="icon">👥</span>
@@ -640,6 +724,31 @@
                  placeholder="Ask anything about the business…" autocomplete="off"
                  aria-label="Ask the AI a question">
           <button class="chat-send" id="chatSend" aria-label="Send message">↑</button>
+        </div>
+      </section>
+
+      <!-- ── CALENDAR ── -->
+      <section class="page" id="page-calendar">
+        <div class="col-title">
+          📅 Calendar
+        </div>
+        <div class="col-body">
+          <div class="cal-nav" id="calNav">
+            <button class="cal-nav-btn" id="calPrev" aria-label="Previous week">‹</button>
+            <span class="cal-nav-label" id="calLabel">This Week</span>
+            <button class="cal-nav-btn" id="calNext" aria-label="Next week">›</button>
+            <button class="cal-nav-btn cal-today-btn" id="calToday">Today</button>
+          </div>
+          <div id="calendarBody"></div>
+        </div>
+        <button class="inbox-add-btn" id="calAddBtn" aria-label="Add event">+ Event</button>
+        <!-- Event detail panel -->
+        <div class="panel-overlay" id="calOverlay"></div>
+        <div class="panel" id="calPanel" role="dialog" aria-modal="true">
+          <div class="panel-handle"></div>
+          <button class="panel-close" id="calPanelClose" aria-label="Close panel">✕</button>
+          <div class="panel-scroll" id="calPanelContent"></div>
+          <div class="btn-row" id="calPanelActions"></div>
         </div>
       </section>
 
@@ -714,11 +823,95 @@
     </div>
   </div>
 
+  <!-- Calendar event modal -->
+  <div class="activity-overlay" id="calEventOverlay"></div>
+  <div class="activity-modal" id="calEventModal" role="dialog" aria-modal="true" aria-labelledby="calEventTitle">
+    <div class="activity-modal-header">
+      <div id="calEventTitle">📅 New Event</div>
+      <button class="activity-close" id="calEventClose" aria-label="Close">&#10005;</button>
+    </div>
+    <div class="activity-modal-body p-4">
+      <form id="calEventForm" autocomplete="off">
+        <input type="hidden" id="ceEditId" value="">
+        <label class="form-label">Title *
+          <input type="text" id="ceTitle" required placeholder="e.g. Annual review with Kenneth">
+        </label>
+        <label class="form-label">Date *
+          <input type="date" id="ceDate" required>
+        </label>
+        <label class="form-label">Time
+          <input type="time" id="ceTime" value="09:00">
+        </label>
+        <label class="form-label">Type
+          <select id="ceType">
+            <option value="meeting">Meeting</option>
+            <option value="review">Review</option>
+            <option value="follow-up">Follow-up</option>
+            <option value="call">Call</option>
+            <option value="submission">Submission</option>
+            <option value="service">Service</option>
+            <option value="reminder">Reminder</option>
+          </select>
+        </label>
+        <label class="form-label">Client name
+          <input type="text" id="ceClient" placeholder="e.g. Kenneth Tan">
+        </label>
+        <label class="form-label">Location
+          <input type="text" id="ceLocation" placeholder="e.g. Zoom, office, on-site">
+        </label>
+        <label class="form-label">Notes
+          <textarea id="ceNotes" rows="2" placeholder="Additional details…"></textarea>
+        </label>
+        <button type="submit" class="btn btn-primary w-full mt-2" id="ceSubmitBtn">Create Event</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Feedback modal -->
+  <div class="activity-overlay" id="feedbackOverlay"></div>
+  <div class="activity-modal" id="feedbackModal" role="dialog" aria-modal="true" aria-labelledby="feedbackTitle">
+    <div class="activity-modal-header">
+      <div id="feedbackTitle">💡 Feature Request</div>
+      <button class="activity-close" id="feedbackClose" aria-label="Close">&#10005;</button>
+    </div>
+    <div class="activity-modal-body p-4" id="feedbackBody">
+      <form id="feedbackForm" autocomplete="off">
+        <label class="form-label">What would you like? *
+          <textarea id="fbRequest" rows="3" required placeholder="Describe the feature or improvement…"></textarea>
+        </label>
+        <label class="form-label">How are you handling this today?
+          <textarea id="fbWorkaround" rows="2" placeholder="What's your current workaround, if any?"></textarea>
+        </label>
+        <label class="form-label">How often does this come up?
+          <select id="fbFrequency">
+            <option value="">Select…</option>
+            <option value="daily">Every day</option>
+            <option value="weekly">A few times a week</option>
+            <option value="occasionally">Occasionally</option>
+            <option value="rarely">Rarely</option>
+          </select>
+        </label>
+        <label class="form-label">How would you feel if we never built this?
+          <select id="fbImportance">
+            <option value="">Select…</option>
+            <option value="very_disappointed">Very disappointed</option>
+            <option value="somewhat_disappointed">Somewhat disappointed</option>
+            <option value="not_bothered">Not bothered</option>
+          </select>
+        </label>
+        <label class="form-label">Your email or phone (optional)
+          <input type="text" id="fbContact" placeholder="So we can follow up with you">
+        </label>
+        <button type="submit" class="btn btn-primary w-full mt-2" id="fbSubmitBtn">Submit Feedback</button>
+      </form>
+    </div>
+  </div>
+
 </div><!-- /#app -->
 
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
-<script src="/static/app.js?v=3"></script>
+<script src="/static/app.js?v=5"></script>
 </body>
 </html>

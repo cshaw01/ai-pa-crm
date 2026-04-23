@@ -16,7 +16,7 @@ from typing import Optional
 import asyncio
 import uuid
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -569,6 +569,134 @@ async def get_contact(contact_type: str, slug: str):
 @app.get("/api/events")
 async def events():
     return db.get_event_log(limit=100)
+
+
+# ------------------------------------------------------------------
+# Routes — calendar
+# ------------------------------------------------------------------
+
+class CalendarEventCreate(BaseModel):
+    title: str
+    start_at: str
+    end_at: str = None
+    event_type: str = 'meeting'
+    client_name: str = ''
+    client_identifier: str = ''
+    location: str = ''
+    notes: str = ''
+
+
+class CalendarEventUpdate(BaseModel):
+    title: str = None
+    start_at: str = None
+    end_at: str = None
+    event_type: str = None
+    client_name: str = None
+    client_identifier: str = None
+    location: str = None
+    notes: str = None
+    status: str = None
+
+
+@app.get("/api/calendar")
+async def list_calendar_events(
+    from_date: str = None,
+    to_date: str = None,
+):
+    if not from_date:
+        from_date = datetime.utcnow().strftime('%Y-%m-%d')
+    if not to_date:
+        # Default to 7 days from from_date
+        from datetime import timedelta
+        d = datetime.strptime(from_date, '%Y-%m-%d')
+        to_date = (d + timedelta(days=7)).strftime('%Y-%m-%d')
+    return db.get_calendar_events(from_date, to_date)
+
+
+@app.post("/api/calendar")
+async def create_calendar_event(body: CalendarEventCreate):
+    event_id = str(uuid.uuid4())[:8]
+    db.create_calendar_event(
+        event_id=event_id,
+        title=body.title,
+        start_at=body.start_at,
+        end_at=body.end_at,
+        event_type=body.event_type,
+        client_name=body.client_name,
+        client_identifier=body.client_identifier,
+        location=body.location,
+        notes=body.notes,
+    )
+    return {"id": event_id, "status": "created"}
+
+
+@app.put("/api/calendar/{event_id}")
+async def update_calendar_event(event_id: str, body: CalendarEventUpdate):
+    existing = db.get_calendar_event(event_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Event not found")
+    updates = {k: v for k, v in body.dict().items() if v is not None}
+    if not updates:
+        return {"status": "no changes"}
+    db.update_calendar_event(event_id, **updates)
+    return {"status": "updated"}
+
+
+@app.delete("/api/calendar/{event_id}")
+async def delete_calendar_event(event_id: str):
+    existing = db.get_calendar_event(event_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Event not found")
+    db.delete_calendar_event(event_id)
+    return {"status": "cancelled"}
+
+
+# ------------------------------------------------------------------
+# Routes — feedback
+# ------------------------------------------------------------------
+
+class FeedbackSubmit(BaseModel):
+    request: str
+    workaround: str = ''
+    frequency: str = ''
+    importance: str = ''
+    contact: str = ''
+
+FEEDBACK_FILE = Path('/app/data/feedback.md')
+
+
+@app.post("/api/feedback")
+async def submit_feedback(body: FeedbackSubmit, req: Request):
+    host = req.headers.get('host', 'unknown')
+    ts = datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')
+
+    freq_labels = {
+        'daily': 'Every day', 'weekly': 'A few times a week',
+        'occasionally': 'Occasionally', 'rarely': 'Rarely',
+    }
+    imp_labels = {
+        'very_disappointed': 'Very disappointed',
+        'somewhat_disappointed': 'Somewhat disappointed',
+        'not_bothered': 'Not bothered',
+    }
+
+    entry = (
+        f"\n---\n\n"
+        f"### {ts} — {host}\n\n"
+        f"**Request:** {body.request}\n\n"
+        f"**Current workaround:** {body.workaround or '—'}\n\n"
+        f"**Frequency:** {freq_labels.get(body.frequency, body.frequency or '—')}  \n"
+        f"**Importance:** {imp_labels.get(body.importance, body.importance or '—')}\n\n"
+        f"**Contact:** {body.contact or '—'}\n"
+    )
+
+    # Append to feedback.md
+    if not FEEDBACK_FILE.exists():
+        FEEDBACK_FILE.write_text('# Feature Requests & Feedback\n')
+    with open(FEEDBACK_FILE, 'a') as f:
+        f.write(entry)
+
+    return {"status": "saved"}
 
 
 # ------------------------------------------------------------------

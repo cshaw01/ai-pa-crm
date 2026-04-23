@@ -16,6 +16,8 @@ const State = {
   lastFocus: null,
   lastSyncAt: null,
   composeContact: null,
+  calWeekStart: null,
+  calEvents: [],
 };
 
 // ------------------------------------------------------------------ //
@@ -30,6 +32,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   loadChatHistory();
   await loadContacts();
   loadApprovals({ initial: true });
+  State.calWeekStart = getMonday(new Date());
+  loadCalendar();
 
   State.pollInterval = setInterval(() => {
     if (State.currentPage === 'inbox' || isDesktop()) loadApprovals();
@@ -86,6 +90,23 @@ function attachStaticListeners() {
     if (!isDesktop()) showPage('inbox', document.querySelector('.nav-btn[data-page="inbox"]'));
   });
 
+  // Calendar
+  document.getElementById('calPrev').addEventListener('click', () => calNavigate(-7));
+  document.getElementById('calNext').addEventListener('click', () => calNavigate(7));
+  document.getElementById('calToday').addEventListener('click', () => { State.calWeekStart = getMonday(new Date()); loadCalendar(); });
+  document.getElementById('calAddBtn').addEventListener('click', () => openCalEventModal());
+  document.getElementById('calPanelClose').addEventListener('click', () => closePanel('cal'));
+  document.getElementById('calOverlay').addEventListener('click', () => closePanel('cal'));
+  document.getElementById('calEventClose').addEventListener('click', closeCalEventModal);
+  document.getElementById('calEventOverlay').addEventListener('click', closeCalEventModal);
+  document.getElementById('calEventForm').addEventListener('submit', handleCalEventSubmit);
+
+  // Feedback modal
+  document.getElementById('hsFeedback').addEventListener('click', openFeedback);
+  document.getElementById('feedbackClose').addEventListener('click', closeFeedback);
+  document.getElementById('feedbackOverlay').addEventListener('click', closeFeedback);
+  document.getElementById('feedbackForm').addEventListener('submit', handleFeedbackSubmit);
+
   // Activity modal
   document.getElementById('activityClose').addEventListener('click', closeActivity);
   document.getElementById('activityOverlay').addEventListener('click', closeActivity);
@@ -105,7 +126,11 @@ function attachStaticListeners() {
   // Escape key closes panels / modals
   document.addEventListener('keydown', e => {
     if (e.key !== 'Escape') return;
-    if (document.getElementById('inboxSubmitModal').classList.contains('open')) {
+    if (document.getElementById('calEventModal').classList.contains('open')) {
+      closeCalEventModal();
+    } else if (document.getElementById('feedbackModal').classList.contains('open')) {
+      closeFeedback();
+    } else if (document.getElementById('inboxSubmitModal').classList.contains('open')) {
       closeInboxSubmit();
     } else if (document.getElementById('activityModal').classList.contains('open')) {
       closeActivity();
@@ -213,6 +238,7 @@ function showPage(page, btn) {
   State.currentPage = page;
 
   if (page === 'inbox') loadApprovals();
+  if (page === 'calendar') loadCalendar();
   if (page === 'crm') renderContacts(document.getElementById('crmSearch').value);
 }
 
@@ -1001,6 +1027,300 @@ async function handleInboxSubmit(e) {
   } finally {
     btn.disabled = false;
     btn.textContent = 'Submit to AI';
+  }
+}
+
+// ------------------------------------------------------------------ //
+// Feedback modal
+// ------------------------------------------------------------------ //
+
+function openFeedback() {
+  State.lastFocus = document.activeElement;
+  document.getElementById('feedbackOverlay').classList.add('open');
+  document.getElementById('feedbackModal').classList.add('open');
+  document.getElementById('fbRequest').focus();
+}
+
+function closeFeedback() {
+  document.getElementById('feedbackOverlay').classList.remove('open');
+  document.getElementById('feedbackModal').classList.remove('open');
+  document.getElementById('feedbackForm').reset();
+  if (State.lastFocus) State.lastFocus.focus();
+}
+
+async function handleFeedbackSubmit(e) {
+  e.preventDefault();
+  const btn = document.getElementById('fbSubmitBtn');
+  const request = document.getElementById('fbRequest').value.trim();
+  if (!request) return;
+
+  btn.disabled = true;
+  btn.textContent = 'Submitting...';
+
+  try {
+    const res = await fetch('/api/feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        request,
+        workaround: document.getElementById('fbWorkaround').value.trim(),
+        frequency: document.getElementById('fbFrequency').value,
+        importance: document.getElementById('fbImportance').value,
+        contact: document.getElementById('fbContact').value.trim(),
+      }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    closeFeedback();
+    toast('Thanks for the feedback!');
+  } catch (err) {
+    toast('Failed: ' + (err.message || 'unknown error'));
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Submit Feedback';
+  }
+}
+
+// ------------------------------------------------------------------ //
+// Calendar
+// ------------------------------------------------------------------ //
+
+function getMonday(d) {
+  const dt = new Date(d);
+  const day = dt.getDay();
+  const diff = dt.getDate() - day + (day === 0 ? -6 : 1);
+  dt.setDate(diff);
+  dt.setHours(0, 0, 0, 0);
+  return dt;
+}
+
+function fmtDate(d) { return d.toISOString().slice(0, 10); }
+
+function calNavigate(days) {
+  State.calWeekStart = new Date(State.calWeekStart.getTime() + days * 86400000);
+  loadCalendar();
+}
+
+async function loadCalendar() {
+  const from = fmtDate(State.calWeekStart);
+  const to = fmtDate(new Date(State.calWeekStart.getTime() + 7 * 86400000));
+
+  // Update label
+  const endDate = new Date(State.calWeekStart.getTime() + 6 * 86400000);
+  const opts = { month: 'short', day: 'numeric' };
+  document.getElementById('calLabel').textContent =
+    `${State.calWeekStart.toLocaleDateString('en', opts)} – ${endDate.toLocaleDateString('en', opts)}`;
+
+  const body = document.getElementById('calendarBody');
+
+  try {
+    const events = await api(`/api/calendar?from_date=${from}&to_date=${to}`);
+    State.calEvents = events;
+    renderCalendar(events);
+  } catch (e) {
+    body.innerHTML = '<div class="cal-empty">Could not load calendar</div>';
+  }
+}
+
+function renderCalendar(events) {
+  const body = document.getElementById('calendarBody');
+  const today = fmtDate(new Date());
+  const days = [];
+
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(State.calWeekStart.getTime() + i * 86400000);
+    const dateStr = fmtDate(d);
+    const dayEvents = events.filter(e => e.start_at && e.start_at.startsWith(dateStr));
+    days.push({ date: d, dateStr, events: dayEvents });
+  }
+
+  if (events.length === 0) {
+    body.innerHTML = '<div class="cal-empty">No events this week</div>';
+    return;
+  }
+
+  body.innerHTML = days.map(day => {
+    if (day.events.length === 0) return '';
+    const isToday = day.dateStr === today;
+    const dayLabel = day.date.toLocaleDateString('en', { weekday: 'short', month: 'short', day: 'numeric' });
+
+    const eventsHtml = day.events.map(ev => {
+      const time = ev.start_at.length > 10 ? ev.start_at.slice(11, 16) : '';
+      const meta = [ev.client_name, ev.location].filter(Boolean).join(' · ');
+      const statusClass = ev.status === 'completed' ? ' status-completed' : '';
+      return `
+        <div class="cal-event type-${esc(ev.event_type)}${statusClass}" onclick="openCalEvent('${esc(ev.id)}')">
+          ${time ? `<div class="cal-event-time">${esc(time)}</div>` : ''}
+          <div class="cal-event-title">${esc(ev.title)}</div>
+          ${meta ? `<div class="cal-event-meta">${esc(meta)}</div>` : ''}
+        </div>`;
+    }).join('');
+
+    return `
+      <div class="cal-day">
+        <div class="cal-day-header${isToday ? ' today' : ''}">
+          ${isToday ? '● ' : ''}${dayLabel}
+          <span class="cal-day-count">${day.events.length}</span>
+        </div>
+        ${eventsHtml}
+      </div>`;
+  }).join('');
+}
+
+function openCalEvent(eventId) {
+  const ev = State.calEvents.find(e => e.id === eventId);
+  if (!ev) return;
+
+  State.lastFocus = document.activeElement;
+  const content = document.getElementById('calPanelContent');
+  const time = ev.start_at.length > 10 ? ev.start_at.slice(11, 16) : '';
+  const date = ev.start_at.slice(0, 10);
+  const dateLabel = new Date(date + 'T00:00:00').toLocaleDateString('en', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+  const typeLabel = ev.event_type.charAt(0).toUpperCase() + ev.event_type.slice(1).replace('-', ' ');
+  const statusLabel = ev.status.charAt(0).toUpperCase() + ev.status.slice(1);
+
+  content.innerHTML = `
+    <div class="panel-title">${esc(ev.title)}</div>
+    <div class="panel-subtitle">${esc(typeLabel)} · ${esc(statusLabel)}</div>
+    <div class="section-label">When</div>
+    <div class="message-bubble">${esc(dateLabel)}${time ? ' at ' + esc(time) : ''}</div>
+    ${ev.client_name ? `<div class="section-label">Client</div><div class="message-bubble">${esc(ev.client_name)}</div>` : ''}
+    ${ev.location ? `<div class="section-label">Location</div><div class="message-bubble">${esc(ev.location)}</div>` : ''}
+    ${ev.notes ? `<div class="section-label">Notes</div><div class="message-bubble">${esc(ev.notes)}</div>` : ''}
+  `;
+
+  const actions = document.getElementById('calPanelActions');
+  const isCompleted = ev.status === 'completed';
+  actions.innerHTML = `
+    <button class="btn btn-ghost" onclick="editCalEvent('${esc(ev.id)}')">✏️ Edit</button>
+    ${isCompleted
+      ? `<button class="btn btn-warning" onclick="updateCalEventStatus('${esc(ev.id)}','scheduled')">↩️ Reopen</button>`
+      : `<button class="btn btn-success" onclick="updateCalEventStatus('${esc(ev.id)}','completed')">✅ Done</button>`
+    }
+    <button class="btn btn-danger" onclick="deleteCalEvent('${esc(ev.id)}')">🗑 Cancel</button>
+  `;
+  actions.className = 'btn-row btn-row-3';
+
+  openPanel('cal');
+}
+
+function openCalEventModal(editEvent) {
+  State.lastFocus = document.activeElement;
+  const form = document.getElementById('calEventForm');
+  form.reset();
+
+  if (editEvent) {
+    document.getElementById('calEventTitle').textContent = '📅 Edit Event';
+    document.getElementById('ceEditId').value = editEvent.id;
+    document.getElementById('ceTitle').value = editEvent.title || '';
+    document.getElementById('ceDate').value = editEvent.start_at ? editEvent.start_at.slice(0, 10) : '';
+    document.getElementById('ceTime').value = editEvent.start_at && editEvent.start_at.length > 10 ? editEvent.start_at.slice(11, 16) : '09:00';
+    document.getElementById('ceType').value = editEvent.event_type || 'meeting';
+    document.getElementById('ceClient').value = editEvent.client_name || '';
+    document.getElementById('ceLocation').value = editEvent.location || '';
+    document.getElementById('ceNotes').value = editEvent.notes || '';
+    document.getElementById('ceSubmitBtn').textContent = 'Update Event';
+  } else {
+    document.getElementById('calEventTitle').textContent = '📅 New Event';
+    document.getElementById('ceEditId').value = '';
+    document.getElementById('ceSubmitBtn').textContent = 'Create Event';
+    // Default date to today
+    document.getElementById('ceDate').value = fmtDate(new Date());
+  }
+
+  document.getElementById('calEventOverlay').classList.add('open');
+  document.getElementById('calEventModal').classList.add('open');
+  document.getElementById('ceTitle').focus();
+}
+
+function closeCalEventModal() {
+  document.getElementById('calEventOverlay').classList.remove('open');
+  document.getElementById('calEventModal').classList.remove('open');
+  document.getElementById('calEventForm').reset();
+  if (State.lastFocus) State.lastFocus.focus();
+}
+
+async function handleCalEventSubmit(e) {
+  e.preventDefault();
+  const btn = document.getElementById('ceSubmitBtn');
+  const editId = document.getElementById('ceEditId').value;
+  const title = document.getElementById('ceTitle').value.trim();
+  const date = document.getElementById('ceDate').value;
+  const time = document.getElementById('ceTime').value || '09:00';
+  if (!title || !date) return;
+
+  const payload = {
+    title,
+    start_at: `${date} ${time}`,
+    event_type: document.getElementById('ceType').value,
+    client_name: document.getElementById('ceClient').value.trim(),
+    location: document.getElementById('ceLocation').value.trim(),
+    notes: document.getElementById('ceNotes').value.trim(),
+  };
+
+  btn.disabled = true;
+  btn.textContent = editId ? 'Updating...' : 'Creating...';
+
+  try {
+    if (editId) {
+      const res = await fetch(`/api/calendar/${editId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      toast('Event updated');
+    } else {
+      const res = await fetch('/api/calendar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      toast('Event created');
+    }
+    closeCalEventModal();
+    closePanel('cal');
+    loadCalendar();
+  } catch (err) {
+    toast('Failed: ' + (err.message || 'unknown error'));
+  } finally {
+    btn.disabled = false;
+    btn.textContent = editId ? 'Update Event' : 'Create Event';
+  }
+}
+
+function editCalEvent(eventId) {
+  const ev = State.calEvents.find(e => e.id === eventId);
+  if (!ev) return;
+  closePanel('cal');
+  openCalEventModal(ev);
+}
+
+async function updateCalEventStatus(eventId, newStatus) {
+  try {
+    const res = await fetch(`/api/calendar/${eventId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: newStatus }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    closePanel('cal');
+    loadCalendar();
+    toast(newStatus === 'completed' ? 'Marked as done' : 'Reopened');
+  } catch (err) {
+    toast('Failed: ' + (err.message || 'unknown error'));
+  }
+}
+
+async function deleteCalEvent(eventId) {
+  try {
+    const res = await fetch(`/api/calendar/${eventId}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error(await res.text());
+    closePanel('cal');
+    loadCalendar();
+    toast('Event cancelled');
+  } catch (err) {
+    toast('Failed: ' + (err.message || 'unknown error'));
   }
 }
 

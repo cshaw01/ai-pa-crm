@@ -61,6 +61,33 @@ def init_db():
         except sqlite3.OperationalError:
             pass  # column already exists
 
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS feedback (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                request     TEXT NOT NULL,
+                workaround  TEXT,
+                frequency   TEXT,
+                importance  TEXT,
+                tenant      TEXT,
+                created_at  TEXT DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS calendar_events (
+                id              TEXT PRIMARY KEY,
+                title           TEXT NOT NULL,
+                start_at        TEXT NOT NULL,
+                end_at          TEXT,
+                event_type      TEXT DEFAULT 'meeting',
+                client_name     TEXT,
+                client_identifier TEXT,
+                location        TEXT,
+                notes           TEXT,
+                status          TEXT DEFAULT 'scheduled',
+                created_at      TEXT DEFAULT (datetime('now')),
+                updated_at      TEXT DEFAULT (datetime('now'))
+            );
+        """)
+
 
 # ------------------------------------------------------------------
 # Pending approvals
@@ -146,6 +173,83 @@ def get_chat_history(limit: int = 50) -> list[dict]:
             "SELECT * FROM chat_history ORDER BY created_at DESC LIMIT ?", (limit,)
         ).fetchall()
         return [dict(r) for r in reversed(rows)]
+
+
+# ------------------------------------------------------------------
+# Feedback
+# ------------------------------------------------------------------
+
+def create_feedback(request: str, workaround: str, frequency: str,
+                    importance: str, tenant: str = '') -> int:
+    with get_db() as conn:
+        cur = conn.execute("""
+            INSERT INTO feedback (request, workaround, frequency, importance, tenant)
+            VALUES (?, ?, ?, ?, ?)
+        """, (request, workaround, frequency, importance, tenant))
+        return cur.lastrowid
+
+
+def get_feedback(limit: int = 100) -> list[dict]:
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM feedback ORDER BY created_at DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+# ------------------------------------------------------------------
+# Calendar events
+# ------------------------------------------------------------------
+
+def create_calendar_event(event_id: str, title: str, start_at: str,
+                          end_at: str = None, event_type: str = 'meeting',
+                          client_name: str = '', client_identifier: str = '',
+                          location: str = '', notes: str = '',
+                          status: str = 'scheduled'):
+    with get_db() as conn:
+        conn.execute("""
+            INSERT INTO calendar_events
+                (id, title, start_at, end_at, event_type,
+                 client_name, client_identifier, location, notes, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (event_id, title, start_at, end_at, event_type,
+              client_name, client_identifier, location, notes, status))
+
+
+def get_calendar_events(from_date: str, to_date: str) -> list[dict]:
+    with get_db() as conn:
+        rows = conn.execute("""
+            SELECT * FROM calendar_events
+            WHERE start_at >= ? AND start_at < ? AND status != 'cancelled'
+            ORDER BY start_at
+        """, (from_date, to_date)).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_calendar_event(event_id: str) -> dict | None:
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM calendar_events WHERE id = ?", (event_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def update_calendar_event(event_id: str, **kwargs):
+    kwargs['updated_at'] = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+    fields = ', '.join(f"{k} = ?" for k in kwargs)
+    values = list(kwargs.values()) + [event_id]
+    with get_db() as conn:
+        conn.execute(
+            f"UPDATE calendar_events SET {fields} WHERE id = ?", values
+        )
+
+
+def delete_calendar_event(event_id: str):
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE calendar_events SET status = 'cancelled', updated_at = ? WHERE id = ?",
+            (datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S'), event_id)
+        )
 
 
 # Initialise on import

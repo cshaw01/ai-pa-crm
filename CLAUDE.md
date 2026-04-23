@@ -191,6 +191,129 @@ When creating a new lead at `wiki/leads/[slug].md`, use whatever is available:
 
 ---
 
+## Calendar Events
+
+The CRM has a `calendar_events` table in the SQLite database at `data/crm.db`. Use it to track appointments, follow-ups, reviews, and reminders.
+
+### Schema
+
+```sql
+calendar_events (
+    id              TEXT PRIMARY KEY,   -- use python: str(uuid.uuid4())[:8]
+    title           TEXT NOT NULL,      -- short description
+    start_at        TEXT NOT NULL,      -- 'YYYY-MM-DD HH:MM' (24hr, local time)
+    end_at          TEXT,               -- optional
+    event_type      TEXT,               -- 'meeting','review','follow-up','call','submission','service','reminder'
+    client_name     TEXT,               -- display name of the client
+    client_identifier TEXT,             -- phone/email matching their wiki record
+    location        TEXT,               -- 'Zoom', 'office', address, etc.
+    notes           TEXT,               -- additional context
+    status          TEXT,               -- 'scheduled','completed','cancelled'
+    created_at      TEXT,
+    updated_at      TEXT
+)
+```
+
+### When to CREATE a calendar event
+
+**During [POST_SEND] — after a reply is sent:**
+- Client confirmed an appointment → create event with the agreed date/time
+- Client asked to be contacted later ("call me next week") → create follow-up event
+- A service/job was scheduled → create service event
+- A policy review or renewal was discussed → create review event
+- A proposal or document submission is due → create submission event
+
+**During [EXTERNAL] analysis — include in your analysis:**
+- If the conversation implies a future action (meeting, call, follow-up), mention it in the analysis so the owner knows an event will be created on send
+
+**During [INTERNAL] — owner asks directly:**
+- "Schedule a review with Kenneth next Saturday 10am" → create event immediately
+- "Remind me to follow up with Deepa on Friday" → create reminder event
+- "What's on the calendar this week?" → query and list events
+
+### When to UPDATE a calendar event
+
+**During [POST_SEND]:**
+- Client rescheduled ("can we move to Thursday instead?") → find the existing event by client_identifier and update start_at
+- Client confirmed a tentative event → update status notes
+
+**During [INTERNAL]:**
+- Owner says "move Kenneth's review to Monday" → update start_at
+- Owner says "mark today's appointments as done" → update status to 'completed'
+
+### When to DELETE (cancel) a calendar event
+
+**During [POST_SEND]:**
+- Client cancelled an appointment → update status to 'cancelled'
+- A service was completed and no follow-up needed → update status to 'completed'
+
+**During [INTERNAL]:**
+- Owner says "cancel the meeting with Dr. Sanjay" → update status to 'cancelled'
+
+### SQL Examples
+
+**Create:**
+```bash
+python3 -c "
+import sqlite3, uuid
+conn = sqlite3.connect('data/crm.db')
+conn.execute(\"\"\"INSERT INTO calendar_events (id, title, start_at, event_type, client_name, client_identifier, location, notes, status)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'scheduled')\"\"\",
+('$(python3 -c \"import uuid; print(str(uuid.uuid4())[:8])\")',
+ 'Annual review', '2026-04-26 10:00', 'review', 'Kenneth Tan', '+65 9123 4567', 'Zoom', 'Discuss Siew Ling CI gap'))
+conn.commit()
+conn.close()
+"
+```
+
+**Query (this week):**
+```bash
+python3 -c "
+import sqlite3
+from datetime import datetime, timedelta
+conn = sqlite3.connect('data/crm.db')
+today = datetime.now().strftime('%Y-%m-%d')
+week_end = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d')
+rows = conn.execute('SELECT * FROM calendar_events WHERE start_at >= ? AND start_at < ? AND status != ? ORDER BY start_at', (today, week_end, 'cancelled')).fetchall()
+for r in rows:
+    print(f'{r[2]} | {r[1]} | {r[5]} | {r[7]} | {r[9]}')
+conn.close()
+"
+```
+
+**Update:**
+```bash
+python3 -c "
+import sqlite3
+conn = sqlite3.connect('data/crm.db')
+conn.execute('UPDATE calendar_events SET start_at = ?, updated_at = datetime(\"now\") WHERE client_identifier = ? AND status = ?', ('2026-04-28 10:00', '+65 9123 4567', 'scheduled'))
+conn.commit()
+conn.close()
+"
+```
+
+**Cancel:**
+```bash
+python3 -c "
+import sqlite3
+conn = sqlite3.connect('data/crm.db')
+conn.execute('UPDATE calendar_events SET status = ?, updated_at = datetime(\"now\") WHERE id = ?', ('cancelled', 'abc12345'))
+conn.commit()
+conn.close()
+"
+```
+
+### Rules
+
+- **Always create events during [POST_SEND]** when the conversation resulted in a scheduled action. Do not skip this step.
+- **Never create duplicate events.** Before inserting, check if an event already exists for the same client_identifier on the same date. If it does, update it instead.
+- **Use the client's identifier from the wiki** (phone or email) as `client_identifier` so the calendar links to their contact record.
+- **Use local time** for `start_at` (the timezone is in `config.json` → `business.timezone`).
+- **Keep titles short** — "Annual review", "Follow-up call", "Service — 3 units", not full sentences.
+- **Set event_type correctly** — this controls the colour coding in the calendar UI.
+
+---
+
 ## Hard Rules
 
 - Never guess client data, prices, availability, or any business information
@@ -198,3 +321,4 @@ When creating a new lead at `wiki/leads/[slug].md`, use whatever is available:
 - Never send anything — only draft it
 - Always read the wiki before responding
 - Always log external interactions to DB
+- Always create calendar events when conversations result in scheduled actions
