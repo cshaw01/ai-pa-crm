@@ -183,7 +183,32 @@ async def accept_approval(approval_id: str):
     if approval['status'] != 'pending':
         raise HTTPException(status_code=400, detail="Approval already actioned")
 
-    # Mark as accepted — owner copies the draft and sends manually
+    # If this approval came from WhatsApp, actually send it via the sidecar.
+    # On failure we bail out BEFORE marking accepted so the owner can retry.
+    if approval['channel'] == 'whatsapp':
+        if not approval.get('identifier'):
+            raise HTTPException(status_code=400, detail="Missing recipient identifier")
+        try:
+            import requests as _r
+            resp = _r.post(
+                f"{WA_SIDECAR_URL}/send",
+                json={"to": approval['identifier'], "text": approval['draft']},
+                timeout=20,
+            )
+            if not resp.ok:
+                try:
+                    err = resp.json().get('error') or resp.text
+                except Exception:
+                    err = resp.text
+                raise HTTPException(status_code=502, detail=f"WhatsApp send failed: {err}")
+        except _rq.exceptions.ConnectionError:
+            raise HTTPException(status_code=503, detail="WhatsApp service is not reachable")
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"WhatsApp send error: {e}")
+
+    # Mark as accepted
     db.update_approval(approval_id, status='accepted')
     db.log_event(approval['identifier'], approval['identifier_type'],
                  approval['channel'], 'out', 'message_sent',
@@ -697,6 +722,99 @@ async def submit_feedback(body: FeedbackSubmit, req: Request):
         f.write(entry)
 
     return {"status": "saved"}
+
+
+# ------------------------------------------------------------------
+# Routes — WhatsApp (Baileys sidecar integration)
+# ------------------------------------------------------------------
+
+import requests as _rq
+
+WA_SIDECAR_URL = os.environ.get('WHATSAPP_SIDECAR_URL', 'http://whatsapp:3000')
+WA_WEBHOOK_SECRET = os.environ.get('WHATSAPP_WEBHOOK_SECRET', '')
+
+
+def _sidecar(method: str, path: str, **kwargs):
+    try:
+        resp = _rq.request(method, f"{WA_SIDECAR_URL}{path}", timeout=10, **kwargs)
+        return JSONResponse(status_code=resp.status_code, content=resp.json())
+    except _rq.exceptions.ConnectionError:
+        return JSONResponse(status_code=503, content={
+            "state": "unreachable",
+            "error": "WhatsApp service is not running",
+        })
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@app.get("/api/whatsapp/status")
+async def wa_status():
+    return _sidecar('GET', '/status')
+
+
+@app.get("/api/whatsapp/qr")
+async def wa_qr():
+    return _sidecar('GET', '/qr')
+
+
+@app.post("/api/whatsapp/connect")
+async def wa_connect():
+    return _sidecar('POST', '/connect')
+
+
+@app.post("/api/whatsapp/disconnect")
+async def wa_disconnect():
+    return _sidecar('POST', '/disconnect')
+
+
+class WhatsAppInbound(BaseModel):
+    channel: str = 'whatsapp'
+    identifier: str
+    identifier_type: str = 'whatsapp'
+    sender_name: str = ''
+    text: str
+    timestamp: Optional[int] = None
+    raw_id: Optional[str] = None
+
+
+@app.post("/api/webhook/whatsapp")
+async def wa_webhook(body: WhatsAppInbound, req: Request):
+    """
+    Inbound message from the Baileys sidecar. Creates a pending approval
+    and kicks off the Claude analysis (same path as the in-dashboard inbox
+    submit — both end up in the approval queue).
+    """
+    # Shared-secret check. Sidecar is only reachable on the tenant network,
+    # but the secret adds defence-in-depth and prevents replay from a
+    # misconfigured CRM_WEBHOOK_URL.
+    provided = req.headers.get('X-Webhook-Secret', '')
+    if WA_WEBHOOK_SECRET and provided != WA_WEBHOOK_SECRET:
+        raise HTTPException(status_code=403, detail="invalid webhook secret")
+
+    approval_id = str(uuid.uuid4())[:8]
+    db.create_approval(
+        approval_id=approval_id,
+        identifier=body.identifier,
+        identifier_type=body.identifier_type,
+        channel=body.channel,
+        sender_name=body.sender_name or body.identifier,
+        original_message=body.text,
+        analysis='Analysing...',
+        draft='Generating draft...',
+    )
+    db.log_event(body.identifier, body.identifier_type, body.channel,
+                 'in', 'message_received', body.text[:100])
+
+    inbox_body = InboxSubmit(
+        sender_name=body.sender_name or body.identifier,
+        identifier=body.identifier,
+        identifier_type=body.identifier_type,
+        channel=body.channel,
+        message=body.text,
+    )
+    asyncio.create_task(_analyse_inbox(approval_id, inbox_body))
+
+    return {"id": approval_id, "status": "queued"}
 
 
 # ------------------------------------------------------------------

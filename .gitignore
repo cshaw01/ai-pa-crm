@@ -6,3 +6,6 @@ data/
 output/
 config.json
 docker/claude-cli
+# Node sidecar — never commit node_modules or session creds
+whatsapp-sidecar/node_modules/
+whatsapp-sidecar/data/

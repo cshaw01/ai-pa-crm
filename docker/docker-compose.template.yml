@@ -11,6 +11,9 @@ services:
       - ./data:/app/data
       - ./claude-home:/home/crm/.claude
       - ./claude-config.json:/home/crm/.claude.json
+    environment:
+      - WHATSAPP_SIDECAR_URL=http://whatsapp:3000
+      - WHATSAPP_WEBHOOK_SECRET=__WA_SECRET__
     networks:
       - tenant
     deploy:
@@ -22,6 +25,33 @@ services:
           memory: 128M
     # Low priority: master processes survive OOM before tenants
     oom_score_adj: 500
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  whatsapp:
+    image: ai-pa-whatsapp:latest
+    container_name: crm-__TENANT__-whatsapp
+    restart: unless-stopped
+    volumes:
+      - ./data/whatsapp:/data/whatsapp
+    environment:
+      - AUTH_DIR=/data/whatsapp
+      - CRM_WEBHOOK_URL=http://crm:8080/api/webhook/whatsapp
+      - WEBHOOK_SECRET=__WA_SECRET__
+      - TENANT_SLUG=__TENANT__
+    networks:
+      - tenant
+    deploy:
+      resources:
+        limits:
+          memory: 192M
+          cpus: "0.3"
+        reservations:
+          memory: 64M
+    oom_score_adj: 600
     logging:
       driver: json-file
       options:

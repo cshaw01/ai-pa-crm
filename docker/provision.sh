@@ -72,12 +72,19 @@ cfg.setdefault('web', {})['port'] = 8080
 json.dump(cfg, open('$TENANT_DIR/config.json', 'w'), indent=2)
 "
 
+# Generate per-tenant webhook secret (32 hex chars)
+WA_SECRET="$(head -c 16 /dev/urandom | xxd -p -c 16)"
+
 # Generate docker-compose.yml from template
 sed \
   -e "s/__TENANT__/$SLUG/g" \
   -e "s/__PORT__/$PORT/g" \
+  -e "s/__WA_SECRET__/$WA_SECRET/g" \
   "$SCRIPT_DIR/docker-compose.template.yml" \
   > "$TENANT_DIR/docker-compose.yml"
+
+# Ensure whatsapp data subdir exists (volume mount target)
+mkdir -p "$TENANT_DIR/data/whatsapp"
 
 # ── Summary ───────────────────────────────────────────────────────────
 

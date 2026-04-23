@@ -12,7 +12,7 @@
       darkMode: ['selector', '[data-theme="dark"]'],
     }
   </script>
-  <link rel="stylesheet" href="/static/style.css?v=5">
+  <link rel="stylesheet" href="/static/style.css?v=7">
   <style type="text/tailwindcss">
     /* ── Focus ── */
     :focus-visible {
@@ -643,6 +643,10 @@
         <span>📥</span>
         <span id="hsPendingCount">0</span>
       </button>
+      <button class="hs-item" id="hsWhatsApp" aria-label="Connect WhatsApp">
+        <span id="hsWaIcon">💬</span>
+        <span id="hsWaLabel">WhatsApp</span>
+      </button>
       <button class="hs-item" id="hsFeedback" aria-label="Feature request">
         <span>💡</span>
         <span>Feedback</span>
@@ -867,6 +871,18 @@
     </div>
   </div>
 
+  <!-- WhatsApp connect modal -->
+  <div class="activity-overlay" id="waOverlay"></div>
+  <div class="activity-modal" id="waModal" role="dialog" aria-modal="true" aria-labelledby="waTitle">
+    <div class="activity-modal-header">
+      <div id="waTitle">💬 WhatsApp</div>
+      <button class="activity-close" id="waClose" aria-label="Close">&#10005;</button>
+    </div>
+    <div class="activity-modal-body p-4" id="waBody">
+      <!-- Filled dynamically by renderWaModal() -->
+    </div>
+  </div>
+
   <!-- Feedback modal -->
   <div class="activity-overlay" id="feedbackOverlay"></div>
   <div class="activity-modal" id="feedbackModal" role="dialog" aria-modal="true" aria-labelledby="feedbackTitle">
@@ -912,6 +928,6 @@
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
-<script src="/static/app.js?v=5"></script>
+<script src="/static/app.js?v=7"></script>
 </body>
 </html>

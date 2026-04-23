@@ -18,6 +18,8 @@ const State = {
   composeContact: null,
   calWeekStart: null,
   calEvents: [],
+  waPollTimer: null,
+  waLastState: null,
 };
 
 // ------------------------------------------------------------------ //
@@ -107,6 +109,11 @@ function attachStaticListeners() {
   document.getElementById('feedbackOverlay').addEventListener('click', closeFeedback);
   document.getElementById('feedbackForm').addEventListener('submit', handleFeedbackSubmit);
 
+  // WhatsApp connect modal
+  document.getElementById('hsWhatsApp').addEventListener('click', openWaModal);
+  document.getElementById('waClose').addEventListener('click', closeWaModal);
+  document.getElementById('waOverlay').addEventListener('click', closeWaModal);
+
   // Activity modal
   document.getElementById('activityClose').addEventListener('click', closeActivity);
   document.getElementById('activityOverlay').addEventListener('click', closeActivity);
@@ -128,6 +135,8 @@ function attachStaticListeners() {
     if (e.key !== 'Escape') return;
     if (document.getElementById('calEventModal').classList.contains('open')) {
       closeCalEventModal();
+    } else if (document.getElementById('waModal').classList.contains('open')) {
+      closeWaModal();
     } else if (document.getElementById('feedbackModal').classList.contains('open')) {
       closeFeedback();
     } else if (document.getElementById('inboxSubmitModal').classList.contains('open')) {
@@ -520,9 +529,12 @@ async function openApproval(id) {
       <button class="btn btn-ghost" id="regenerateBtn" style="width:100%;margin-top:6px">✏️ Regenerate draft</button>
     `;
 
+    const acceptLabel = a.channel === 'whatsapp'
+      ? '✅ Send via WhatsApp'
+      : '✅ Approve &amp; copy';
     actions.innerHTML = `
       <button class="btn btn-danger"  id="rejectBtn">❌ Reject</button>
-      <button class="btn btn-success" id="acceptBtn" style="grid-column:span 2">✅ Approve &amp; copy</button>
+      <button class="btn btn-success" id="acceptBtn" style="grid-column:span 2">${acceptLabel}</button>
     `;
 
     document.getElementById('rejectBtn').addEventListener('click', rejectApproval);
@@ -631,7 +643,7 @@ function optimisticAction(id, kind, commit) {
       await commit();
       toast(kind === 'send' ? '✅ Reply sent' : '❌ Rejected');
     } catch (e) {
-      toast('Action failed');
+      toast(`Send failed: ${e.message || 'unknown error'}`);
       if (card) card.style.opacity = '1';
       loadApprovals();
     }
@@ -1440,7 +1452,15 @@ async function api(url, method = 'GET', body = null) {
     opts.body = JSON.stringify(body);
   }
   const res = await fetch(url, opts);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (!res.ok) {
+    // Try to extract FastAPI's {detail: "..."} for a useful message
+    let detail = `HTTP ${res.status}`;
+    try {
+      const err = await res.json();
+      if (err && err.detail) detail = err.detail;
+    } catch (_) {}
+    throw new Error(detail);
+  }
   return res.json();
 }
 
@@ -1495,3 +1515,164 @@ function avatarColor(name) {
   for (let c of (name || '')) hash = c.charCodeAt(0) + ((hash << 5) - hash);
   return colors[Math.abs(hash) % colors.length];
 }
+
+// ------------------------------------------------------------------ //
+// WhatsApp connect modal
+// ------------------------------------------------------------------ //
+
+async function openWaModal() {
+  State.lastFocus = document.activeElement;
+  document.getElementById('waOverlay').classList.add('open');
+  document.getElementById('waModal').classList.add('open');
+  renderWaModal({ state: 'loading' });
+  await waRefresh();
+  // Poll while open — every 2s catches QR updates and the moment of connection
+  if (State.waPollTimer) clearInterval(State.waPollTimer);
+  State.waPollTimer = setInterval(waRefresh, 2000);
+}
+
+function closeWaModal() {
+  document.getElementById('waOverlay').classList.remove('open');
+  document.getElementById('waModal').classList.remove('open');
+  if (State.waPollTimer) { clearInterval(State.waPollTimer); State.waPollTimer = null; }
+  if (State.lastFocus) State.lastFocus.focus();
+}
+
+async function waRefresh() {
+  try {
+    const res = await fetch('/api/whatsapp/qr');
+    const data = await res.json();
+    // data: { state, qr_data_url, phone, error? }
+    State.waLastState = data.state;
+    updateWaHeaderPill(data.state, data.phone);
+    renderWaModal(data);
+  } catch (e) {
+    renderWaModal({ state: 'unreachable', error: e.message });
+  }
+}
+
+function updateWaHeaderPill(state, phone) {
+  const icon = document.getElementById('hsWaIcon');
+  const label = document.getElementById('hsWaLabel');
+  if (!icon || !label) return;
+  if (state === 'connected') {
+    icon.textContent = '✅';
+    label.textContent = phone ? ('+' + phone) : 'Connected';
+  } else if (state === 'qr' || state === 'connecting') {
+    icon.textContent = '🟡';
+    label.textContent = 'Connecting';
+  } else {
+    icon.textContent = '💬';
+    label.textContent = 'WhatsApp';
+  }
+}
+
+function renderWaModal(data) {
+  const body = document.getElementById('waBody');
+  if (!body) return;
+  const state = data.state || 'disconnected';
+
+  if (state === 'loading') {
+    body.innerHTML = `<div class="text-center py-6 text-[var(--muted)]">Loading...</div>`;
+    return;
+  }
+
+  if (state === 'unreachable') {
+    body.innerHTML = `
+      <div class="text-center py-6">
+        <div class="text-lg mb-2">⚠️ Service unreachable</div>
+        <div class="text-sm text-[var(--muted)] mb-4">
+          The WhatsApp service isn't running in this tenant. Contact support.
+        </div>
+        <div class="text-xs text-[var(--muted)]">${data.error || ''}</div>
+      </div>`;
+    return;
+  }
+
+  if (state === 'connected') {
+    const phone = data.phone ? ('+' + data.phone) : '(unknown)';
+    body.innerHTML = `
+      <div class="text-center py-4">
+        <div style="font-size:3rem">✅</div>
+        <div class="text-lg font-semibold mt-2">WhatsApp connected</div>
+        <div class="text-sm text-[var(--muted)] mt-1">Linked as <strong>${phone}</strong></div>
+        <div class="text-xs text-[var(--muted)] mt-4 mb-6">
+          Incoming messages will appear in the Inbox for your approval.
+        </div>
+        <button class="btn" id="waDisconnectBtn">Disconnect</button>
+      </div>`;
+    document.getElementById('waDisconnectBtn').addEventListener('click', waDisconnect);
+    return;
+  }
+
+  if (state === 'qr' && data.qr_data_url) {
+    body.innerHTML = `
+      <div class="text-center">
+        <div class="text-sm text-[var(--muted)] mb-3">
+          On your phone: <strong>WhatsApp → Settings → Linked Devices → Link a Device</strong>,
+          then scan this code:
+        </div>
+        <img src="${data.qr_data_url}" alt="WhatsApp QR code"
+             style="width:260px;height:260px;margin:0 auto;display:block;background:white;padding:8px;border-radius:8px;">
+        <div class="text-xs text-[var(--muted)] mt-3">
+          QR refreshes automatically. Keep this window open until connection succeeds.
+        </div>
+      </div>`;
+    return;
+  }
+
+  if (state === 'connecting') {
+    body.innerHTML = `
+      <div class="text-center py-6">
+        <div style="font-size:2.5rem">🟡</div>
+        <div class="text-sm text-[var(--muted)] mt-3">Preparing connection, waiting for QR...</div>
+      </div>`;
+    return;
+  }
+
+  // disconnected (or error)
+  const errMsg = data.error ? `<div class="text-xs" style="color:var(--danger);margin-top:8px">${data.error}</div>` : '';
+  body.innerHTML = `
+    <div class="text-center py-4">
+      <div style="font-size:2.5rem">💬</div>
+      <div class="text-lg font-semibold mt-2">Connect your WhatsApp</div>
+      <div class="text-sm text-[var(--muted)] mt-2 mb-5">
+        Links your WhatsApp as a companion device — same mechanism as WhatsApp Web.
+        Your phone does <em>not</em> need to stay online after setup.
+      </div>
+      <button class="btn btn-primary" id="waConnectBtn">Show QR code</button>
+      ${errMsg}
+    </div>`;
+  document.getElementById('waConnectBtn').addEventListener('click', waConnect);
+}
+
+async function waConnect() {
+  try {
+    await fetch('/api/whatsapp/connect', { method: 'POST' });
+    // QR will appear on the next poll tick
+    await waRefresh();
+  } catch (e) {
+    toast('Failed to start connection: ' + e.message);
+  }
+}
+
+async function waDisconnect() {
+  if (!confirm('Disconnect WhatsApp? You will need to scan a new QR to reconnect.')) return;
+  try {
+    await fetch('/api/whatsapp/disconnect', { method: 'POST' });
+    await waRefresh();
+    toast('WhatsApp disconnected');
+  } catch (e) {
+    toast('Disconnect failed: ' + e.message);
+  }
+}
+
+// On page load, do a single silent status check so the header pill reflects reality
+(async function waInitialStatus() {
+  try {
+    const res = await fetch('/api/whatsapp/status');
+    if (!res.ok) return;
+    const d = await res.json();
+    updateWaHeaderPill(d.state, d.phone);
+  } catch (e) { /* ignore */ }
+})();
