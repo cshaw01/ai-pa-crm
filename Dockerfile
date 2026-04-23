@@ -17,7 +17,7 @@ COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
 # App code
-COPY web.py bridge.py db.py CLAUDE.md schema.sql config.example.json /app/
+COPY web.py bridge.py db.py backup_sync.py CLAUDE.md schema.sql config.example.json /app/
 COPY channels/ /app/channels/
 COPY static/ /app/static/
 

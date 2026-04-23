@@ -22,6 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import db
+import backup_sync
 
 # ------------------------------------------------------------------
 # Config
@@ -44,8 +45,100 @@ app.mount("/static", StaticFiles(directory=str(PROJECT_DIR / "static")), name="s
 
 
 # ------------------------------------------------------------------
+# Gateway secret middleware — require Traefik-injected header on dashboard
+# traffic, so a direct hit to the container port (bypassing Traefik) fails.
+# Webhook endpoints are exempt (called by external systems, not via Traefik).
+# Opt-in: if INTERNAL_SECRET env is unset, no check runs (backward compat).
+# ------------------------------------------------------------------
+
+_INTERNAL_SECRET = os.environ.get('INTERNAL_SECRET', '')
+_EXEMPT_PATH_PREFIXES = ('/api/webhook/',)
+
+
+@app.middleware("http")
+async def _require_gateway_secret(request: Request, call_next):
+    if not _INTERNAL_SECRET:
+        return await call_next(request)
+    path = request.url.path or ''
+    if any(path.startswith(p) for p in _EXEMPT_PATH_PREFIXES):
+        return await call_next(request)
+    provided = request.headers.get('X-Internal-Secret', '')
+    if provided != _INTERNAL_SECRET:
+        return JSONResponse(status_code=403, content={"detail": "gateway secret missing or invalid"})
+    return await call_next(request)
+
+
+@app.on_event("startup")
+async def _startup_hooks():
+    # Set up GitHub-backed wiki backup if configured. Non-blocking —
+    # if GitHub is unreachable, we log and continue booting.
+    try:
+        if backup_sync.is_configured():
+            ok = backup_sync.ensure_setup(WIKI_DIR)
+            print(f"[backup_sync] startup setup: {'ok' if ok else 'skipped/failed'}", flush=True)
+        else:
+            print("[backup_sync] not configured — wiki changes will not be pushed to GitHub", flush=True)
+    except Exception as e:
+        print(f"[backup_sync] startup error (non-fatal): {e}", flush=True)
+
+    # Nightly SQLite dump scheduler: spreads across tenants by hashing
+    # the slug, fires once/day ~04:00 local time.
+    asyncio.create_task(_nightly_backup_loop())
+
+
+async def _nightly_backup_loop():
+    """Fire nightly_backup once per day, offset by tenant hash so tenants don't pile up."""
+    if not backup_sync.is_configured():
+        return
+    from datetime import timedelta
+    import hashlib
+    slug = os.environ.get('TENANT_SLUG', 'default')
+    tz_name = CONFIG.get('business', {}).get('timezone', 'UTC')
+    # Spread across [04:00, 05:00) local time by hash
+    offset_min = int(hashlib.md5(slug.encode()).hexdigest(), 16) % 60
+    while True:
+        now_utc = datetime.utcnow()
+        # Compute next fire time: 04:<offset> local → UTC. We keep it
+        # simple and don't fetch tz libs; instead the host/compose should
+        # set TZ env or we fire at a fixed UTC time. For v1, just fire
+        # at 04:XX UTC (adequate until we add tz handling).
+        target = now_utc.replace(hour=4, minute=offset_min, second=0, microsecond=0)
+        if target <= now_utc:
+            target = target + timedelta(days=1)
+        sleep_secs = (target - now_utc).total_seconds()
+        print(f"[backup_sync] next nightly backup in {int(sleep_secs)}s", flush=True)
+        try:
+            await asyncio.sleep(sleep_secs)
+            print("[backup_sync] running nightly backup", flush=True)
+            backup_sync.nightly_backup(WIKI_DIR, db.DB_PATH)
+        except asyncio.CancelledError:
+            return
+        except Exception as e:
+            print(f"[backup_sync] nightly error (non-fatal): {e}", flush=True)
+            await asyncio.sleep(3600)
+
+
+# ------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------
+
+def _sync_wiki_after_post_send(approval: dict, kind: str = 'accept'):
+    """
+    Push wiki changes produced by a POST_SEND to GitHub (best-effort).
+
+    Called after call_claude() returns from an accept/done flow. Claude may
+    have added an interaction log row, created a lead file, or updated a
+    contact record. We commit whatever diff is present, with a message
+    describing the approval that caused it.
+    """
+    try:
+        sender = (approval.get('sender_name') or approval.get('identifier') or 'unknown')[:60]
+        channel = approval.get('channel') or 'unknown'
+        summary = f"{kind}: {channel} reply to {sender}"
+        backup_sync.sync_wiki(WIKI_DIR, summary)
+    except Exception as e:
+        print(f"[backup_sync] sync error (non-fatal): {e}", flush=True)
+
 
 def call_claude(prompt: str) -> Optional[str]:
     claude_cfg = CONFIG.get('claude', {})
@@ -241,6 +334,9 @@ async def accept_approval(approval_id: str):
     )
     call_claude(prompt)
 
+    # Sync wiki changes produced by POST_SEND to GitHub (non-fatal on failure)
+    _sync_wiki_after_post_send(approval, kind='accept')
+
     return {"ok": True, "draft": approval['draft']}
 
 
@@ -305,6 +401,8 @@ async def mark_done(approval_id: str):
         f"sent_reply: {approval['draft']}"
     )
     call_claude(prompt)
+
+    _sync_wiki_after_post_send(approval, kind='done')
 
     return {"ok": True}
 
@@ -1266,6 +1364,16 @@ async def meta_disconnect(body: dict):
             print(f"[meta_disconnect] unsubscribe failed: {e}")
     db.delete_channel_connection(channel)
     return {"status": "disconnected"}
+
+
+# ------------------------------------------------------------------
+# Routes — backup status
+# ------------------------------------------------------------------
+
+@app.get("/api/backup/status")
+async def backup_status():
+    """Return info about the most recent wiki commit, for dashboard surfacing."""
+    return backup_sync.last_commit_info(WIKI_DIR)
 
 
 # ----- Outbound send (Graph API) --------------------------------------------

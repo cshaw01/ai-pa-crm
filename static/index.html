@@ -12,7 +12,7 @@
       darkMode: ['selector', '[data-theme="dark"]'],
     }
   </script>
-  <link rel="stylesheet" href="/static/style.css?v=10">
+  <link rel="stylesheet" href="/static/style.css?v=11">
   <style type="text/tailwindcss">
     /* ── Focus ── */
     :focus-visible {
@@ -212,6 +212,30 @@
       border-radius: 3px;
       font-size: 0.78rem;
     }
+    .ch-backup {
+      margin-top: 16px;
+      padding: 10px 12px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 0.8rem;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+    .ch-backup.ch-backup-warn { background: #fef3c7; color: #78350f; border-color: #fde68a; }
+    .ch-backup-link {
+      font-family: ui-monospace, monospace;
+      background: var(--surface);
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      color: var(--primary);
+      text-decoration: none;
+    }
+    .ch-backup-link:hover { text-decoration: underline; }
 
     /* ── Buttons ── */
     .btn {
@@ -1000,6 +1024,6 @@
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
-<script src="/static/app.js?v=10"></script>
+<script src="/static/app.js?v=11"></script>
 </body>
 </html>

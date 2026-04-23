@@ -1994,7 +1994,11 @@ function renderChannelsModal(data) {
     ${configNote}
     <div class="text-xs text-[var(--muted)] mt-4">
       WhatsApp is managed separately — see the WhatsApp button.
-    </div>`;
+    </div>
+    <div class="ch-backup" id="chBackupStatus">Checking backup status…</div>`;
+
+  // Fetch and render backup status lazily
+  loadBackupStatus();
 
   body.querySelectorAll('[data-connect]').forEach(btn => {
     btn.addEventListener('click', () => startMetaConnect(btn.dataset.connect));
@@ -2037,6 +2041,35 @@ async function disconnectMeta(channel) {
     toast('Disconnected');
   } catch (e) {
     toast('Disconnect failed: ' + e.message);
+  }
+}
+
+async function loadBackupStatus() {
+  const el = document.getElementById('chBackupStatus');
+  if (!el) return;
+  try {
+    const d = await api('/api/backup/status');
+    if (!d.configured) {
+      el.textContent = '⚠ No backup configured for this tenant.';
+      el.classList.add('ch-backup-warn');
+      return;
+    }
+    if (!d.initialised) {
+      el.textContent = '⚠ Backup service starting…';
+      return;
+    }
+    if (!d.sha) {
+      el.textContent = 'No backups yet.';
+      return;
+    }
+    const when = d.date ? fmtLocalDate(d.date.replace(/\s[+-]\d{4}$/, '').replace(' ', 'T') + 'Z') : '';
+    el.innerHTML = `
+      <span>🛡 Last backup: <strong>${esc(when)}</strong></span>
+      <a href="${escAttr(d.web_url || d.repo_url || '#')}" target="_blank" rel="noopener" class="ch-backup-link">
+        ${esc(d.short_sha || 'view')}
+      </a>`;
+  } catch (e) {
+    el.textContent = 'Backup status unavailable.';
   }
 }
 

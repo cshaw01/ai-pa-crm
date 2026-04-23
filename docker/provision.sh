@@ -78,12 +78,16 @@ WA_SECRET="$(head -c 16 /dev/urandom | xxd -p -c 16)"
 # Generate per-tenant Fernet key (urlsafe base64, 32 bytes)
 FERNET_KEY="$(python3 -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"
 
+# Generate per-tenant gateway secret (32 hex chars)
+INTERNAL_SECRET="$(head -c 16 /dev/urandom | xxd -p -c 16)"
+
 # Generate docker-compose.yml from template
 sed \
   -e "s/__TENANT__/$SLUG/g" \
   -e "s/__PORT__/$PORT/g" \
   -e "s/__WA_SECRET__/$WA_SECRET/g" \
   -e "s|__FERNET_KEY__|$FERNET_KEY|g" \
+  -e "s/__INTERNAL_SECRET__/$INTERNAL_SECRET/g" \
   "$SCRIPT_DIR/docker-compose.template.yml" \
   > "$TENANT_DIR/docker-compose.yml"
 

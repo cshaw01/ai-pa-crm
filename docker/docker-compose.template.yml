@@ -12,6 +12,7 @@ services:
       - ./claude-home:/home/crm/.claude
       - ./claude-config.json:/home/crm/.claude.json
     environment:
+      - TENANT_SLUG=__TENANT__
       - WHATSAPP_SIDECAR_URL=http://whatsapp:3000
       - WHATSAPP_WEBHOOK_SECRET=__WA_SECRET__
       - TENANT_ENCRYPTION_KEY=__FERNET_KEY__
@@ -22,6 +23,15 @@ services:
       - META_VERIFY_TOKEN=${META_VERIFY_TOKEN:-}
       - META_GRAPH_VERSION=v18.0
       - META_REDIRECT_URI=${META_REDIRECT_URI:-}
+      # GitHub-backed wiki + SQLite backup. Token is a fine-grained PAT scoped
+      # to the backup org. See docs/wiki-backup.md for setup + rotation.
+      - GITHUB_BACKUP_ORG=${GITHUB_BACKUP_ORG:-}
+      - GITHUB_BACKUP_TOKEN=${GITHUB_BACKUP_TOKEN:-}
+      - GITHUB_BACKUP_USER=${GITHUB_BACKUP_USER:-chiefpa-bot}
+      # Shared secret required in X-Internal-Secret header. Traefik injects;
+      # direct-to-port requests fail 403 unless they know the value. See
+      # docs/gateway-secret.md for the Traefik middleware that pairs with this.
+      - INTERNAL_SECRET=__INTERNAL_SECRET__
     networks:
       - tenant
     deploy:

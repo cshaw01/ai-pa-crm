@@ -38,7 +38,51 @@ TRAEFIK_DIR="/data/coolify/proxy/dynamic"
 
 echo "Adding Traefik route: $SUBDOMAIN → localhost:$PORT"
 
-sudo tee "$TRAEFIK_DIR/crm-${SLUG}.yaml" > /dev/null <<EOF
+# Read INTERNAL_SECRET from the tenant compose so Traefik injects the
+# header that pairs with web.py's gateway-secret middleware. Direct-to-port
+# requests bypassing Traefik get rejected 403 without this header.
+INTERNAL_SECRET=""
+TENANT_COMPOSE="/home/claude/tenants/${SLUG}/docker-compose.yml"
+if [ -f "$TENANT_COMPOSE" ]; then
+  INTERNAL_SECRET=$(grep -oP 'INTERNAL_SECRET=\K\S+' "$TENANT_COMPOSE" | head -1)
+fi
+
+if [ -n "$INTERNAL_SECRET" ]; then
+  sudo tee "$TRAEFIK_DIR/crm-${SLUG}.yaml" > /dev/null <<EOF
+# CRM tenant: $SLUG
+http:
+  routers:
+    crm-${SLUG}-http:
+      entryPoints:
+        - http
+      service: crm-${SLUG}
+      rule: Host(\`${SUBDOMAIN}\`)
+      middlewares:
+        - crm-${SLUG}-gateway-secret
+        - redirect-to-https
+    crm-${SLUG}-https:
+      entryPoints:
+        - https
+      service: crm-${SLUG}
+      rule: Host(\`${SUBDOMAIN}\`)
+      middlewares:
+        - crm-${SLUG}-gateway-secret
+      tls:
+        certresolver: letsencrypt
+  middlewares:
+    crm-${SLUG}-gateway-secret:
+      headers:
+        customRequestHeaders:
+          X-Internal-Secret: "${INTERNAL_SECRET}"
+  services:
+    crm-${SLUG}:
+      loadBalancer:
+        servers:
+          - url: 'http://host.docker.internal:${PORT}'
+EOF
+else
+  echo "  ⚠️  No INTERNAL_SECRET found — Traefik config will not inject the gateway header"
+  sudo tee "$TRAEFIK_DIR/crm-${SLUG}.yaml" > /dev/null <<EOF
 # CRM tenant: $SLUG
 http:
   routers:
@@ -62,6 +106,7 @@ http:
         servers:
           - url: 'http://host.docker.internal:${PORT}'
 EOF
+fi
 
 echo "  ✅ Traefik config written to $TRAEFIK_DIR/crm-${SLUG}.yaml"
 echo "  Traefik auto-reloads dynamic config — no restart needed."
