@@ -119,6 +119,11 @@ function attachStaticListeners() {
   document.getElementById('channelsClose').addEventListener('click', closeChannelsModal);
   document.getElementById('channelsOverlay').addEventListener('click', closeChannelsModal);
 
+  // Patterns (auto-approval) modal
+  document.getElementById('hsPatterns').addEventListener('click', openPatternsModal);
+  document.getElementById('patternsClose').addEventListener('click', closePatternsModal);
+  document.getElementById('patternsOverlay').addEventListener('click', closePatternsModal);
+
   // Activity modal
   document.getElementById('activityClose').addEventListener('click', closeActivity);
   document.getElementById('activityOverlay').addEventListener('click', closeActivity);
@@ -434,7 +439,8 @@ function approvalCard(a, isNewArrival = false) {
 
   // Ribbon
   let ribbon = '';
-  if (a.kind === 'outbound') ribbon = `<span class="ribbon">COMPOSE</span>`;
+  if (a.kind === 'auto') ribbon = `<span class="ribbon ribbon-auto">⚡ AUTO</span>`;
+  else if (a.kind === 'outbound') ribbon = `<span class="ribbon">COMPOSE</span>`;
   else if (isNew) ribbon = `<span class="ribbon">NEW LEAD</span>`;
   else if (minsAgo >= 60) ribbon = `<span class="ribbon urgent">WAITING</span>`;
 
@@ -1158,14 +1164,20 @@ function closeActivity() {
 
 function activityEventHTML(ev) {
   const iconMap = {
-    message_received: '📨',
-    message_sent:     '📤',
-    rejected:         '❌',
+    message_received:    '📨',
+    message_sent:        '📤',
+    message_sent_manual: '📤',
+    auto_sent:           '⚡',
+    rejected:            '❌',
   };
   const icon = iconMap[ev.event_type] || '•';
-  const dirLabel = ev.direction === 'in' ? 'Received' : ev.direction === 'out' ? 'Sent' : '';
+  const dirLabel = ev.direction === 'in' ? 'Received'
+    : ev.event_type === 'auto_sent' ? 'Auto-sent'
+    : ev.direction === 'out' ? 'Sent'
+    : '';
+  const rowCls = ev.event_type === 'auto_sent' ? ' activity-event-auto' : '';
   return `
-    <div class="activity-event">
+    <div class="activity-event${rowCls}">
       <div class="ev-icon">${icon}</div>
       <div class="ev-meta">
         <div class="ev-title">${esc(dirLabel)} · ${esc(ev.channel || '')}</div>
@@ -2096,3 +2108,168 @@ async function loadBackupStatus() {
     history.replaceState({}, '', location.pathname);
   }
 })();
+
+
+// ------------------------------------------------------------------ //
+// Patterns (auto-approval) modal
+// ------------------------------------------------------------------ //
+
+async function openPatternsModal() {
+  State.lastFocus = document.activeElement;
+  document.getElementById('patternsOverlay').classList.add('open');
+  document.getElementById('patternsModal').classList.add('open');
+  renderPatternsModal({ loading: true });
+  await refreshPatternsModal();
+}
+
+function closePatternsModal() {
+  document.getElementById('patternsOverlay').classList.remove('open');
+  document.getElementById('patternsModal').classList.remove('open');
+  if (State.lastFocus) State.lastFocus.focus();
+}
+
+async function refreshPatternsModal() {
+  try {
+    const data = await api('/api/patterns');
+    renderPatternsModal(data);
+  } catch (e) {
+    renderPatternsModal({ error: e.message });
+  }
+}
+
+function renderPatternsModal(data) {
+  const body = document.getElementById('patternsBody');
+  if (!body) return;
+
+  if (data.loading) {
+    body.innerHTML = '<div class="text-center py-6 text-[var(--muted)]">Loading…</div>';
+    return;
+  }
+  if (data.error) {
+    body.innerHTML = `<div class="text-center py-6" style="color:var(--danger)">${esc(data.error)}</div>`;
+    return;
+  }
+
+  const patterns = data.patterns || [];
+  const automated = patterns.filter(p => p.status === 'auto');
+  const ready = patterns.filter(p => p.status === 'learning' && p.is_eligible);
+  const learning = patterns.filter(p => p.status === 'learning' && !p.is_eligible);
+  const locked = patterns.filter(p => p.status === 'manual_locked');
+
+  if (patterns.length === 0) {
+    body.innerHTML = `
+      <div class="pt-empty">
+        Your AI-drafted replies aren't similar enough yet to automate.<br>
+        Come back after a few more conversations.
+      </div>`;
+    return;
+  }
+
+  const exampleBlock = (p) => {
+    if (!p.last_example_question) return '';
+    const q = (p.last_example_question || '').slice(0, 200);
+    const a = (p.last_example_answer || '').slice(0, 200);
+    return `
+      <div class="pt-example">
+        <div class="pt-example-q">Q: ${esc(q)}</div>
+        <div class="pt-example-a">A: ${esc(a)}</div>
+      </div>`;
+  };
+
+  const autoRow = (p) => `
+    <div class="pt-row">
+      <div class="pt-head">
+        <div class="pt-label">${esc(p.intent_label)} <span class="pt-badge">auto</span></div>
+        <div class="pt-actions">
+          <button class="btn btn-ghost" data-disable="${esc(p.intent_label)}">Disable</button>
+        </div>
+      </div>
+      <div class="pt-progress">Seen ${p.accepted_no_edit} times across ${p.distinct_days_no_edit} days (last 30).</div>
+      ${exampleBlock(p)}
+    </div>`;
+
+  const readyRow = (p) => `
+    <div class="pt-row">
+      <div class="pt-head">
+        <div class="pt-label">${esc(p.intent_label)}</div>
+        <div class="pt-actions">
+          <button class="btn btn-primary" data-enable="${esc(p.intent_label)}">Enable auto</button>
+        </div>
+      </div>
+      <div class="pt-progress">Handled ${p.accepted_no_edit} times with no edits across ${p.distinct_days_no_edit} days. Ready to automate.</div>
+      ${exampleBlock(p)}
+    </div>`;
+
+  const learningRow = (p) => {
+    const days = p.distinct_days_no_edit || 0;
+    const hits = p.accepted_no_edit || 0;
+    const daysNeeded = Math.max(0, 5 - days);
+    const hitsNeeded = Math.max(0, 5 - hits);
+    const qualifier = (p.accepted_with_edit || p.rejected)
+      ? ' (edits or rejections reset the counter)'
+      : '';
+    const progress = `Seen ${hits}/5 with no edits across ${days}/5 days${qualifier}.`;
+    return `
+      <div class="pt-row">
+        <div class="pt-head">
+          <div class="pt-label">${esc(p.intent_label)}</div>
+          <div class="pt-progress">Needs ${hitsNeeded > 0 ? hitsNeeded + ' more' : 'more days'}</div>
+        </div>
+        <div class="pt-progress">${progress}</div>
+        ${exampleBlock(p)}
+      </div>`;
+  };
+
+  const lockedRow = (p) => `
+    <div class="pt-row">
+      <div class="pt-head">
+        <div class="pt-label">${esc(p.intent_label)} <span class="pt-badge pt-badge-warn">blocked</span></div>
+        <div class="pt-actions">
+          <button class="btn btn-ghost" data-reset="${esc(p.intent_label)}">Re-enable learning</button>
+        </div>
+      </div>
+      <div class="pt-progress">Reverted by you. It won't auto-promote again until you reset it.</div>
+      ${exampleBlock(p)}
+    </div>`;
+
+  const section = (title, rows) => rows.length
+    ? `<div class="pt-section">
+         <div class="pt-section-title">${title}</div>
+         <div class="pt-list">${rows.join('')}</div>
+       </div>`
+    : '';
+
+  body.innerHTML = `
+    ${section('Automated', automated.map(autoRow))}
+    ${section('Ready to automate', ready.map(readyRow))}
+    ${section('Still learning', learning.map(learningRow))}
+    ${section('Blocked from auto', locked.map(lockedRow))}
+    <div class="text-xs text-[var(--muted)] mt-2">
+      A pattern becomes eligible after 5 zero-edit accepts across 5 different days in the last 30 days.
+    </div>`;
+
+  body.querySelectorAll('[data-enable]').forEach(btn => {
+    btn.addEventListener('click', () => togglePattern(btn.dataset.enable, 'enable',
+      'Auto-reply enabled. Future matching messages will be sent without asking.'));
+  });
+  body.querySelectorAll('[data-disable]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (!confirm('Stop auto-replying to this pattern? Future matches will queue for your review.')) return;
+      togglePattern(btn.dataset.disable, 'disable', 'Auto-reply disabled.');
+    });
+  });
+  body.querySelectorAll('[data-reset]').forEach(btn => {
+    btn.addEventListener('click', () => togglePattern(btn.dataset.reset, 'reset',
+      'Pattern moved back to learning.'));
+  });
+}
+
+async function togglePattern(label, action, successMsg) {
+  try {
+    await api(`/api/patterns/${encodeURIComponent(label)}/${action}`, 'POST');
+    await refreshPatternsModal();
+    toast(successMsg);
+  } catch (e) {
+    toast(`${action} failed: ${e.message}`);
+  }
+}

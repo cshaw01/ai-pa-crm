@@ -109,6 +109,17 @@ def init_db():
             except sqlite3.OperationalError:
                 pass
 
+        # Migration: auto-approval pattern tracking
+        for col_sql in (
+            "ALTER TABLE pending_approvals ADD COLUMN intent_label TEXT",
+            "ALTER TABLE pending_approvals ADD COLUMN was_edited INTEGER DEFAULT 0",
+            "ALTER TABLE pending_approvals ADD COLUMN error_note TEXT",
+        ):
+            try:
+                conn.execute(col_sql)
+            except sqlite3.OperationalError:
+                pass
+
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS feedback (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -159,6 +170,15 @@ def init_db():
                 last_inbound_at TEXT,
                 created_at      TEXT DEFAULT (datetime('now')),
                 UNIQUE(channel, identifier)
+            );
+
+            CREATE TABLE IF NOT EXISTS response_patterns (
+                intent_label    TEXT PRIMARY KEY,
+                status          TEXT DEFAULT 'learning',   -- 'learning' | 'auto' | 'manual_locked'
+                promoted_at     TEXT,
+                demoted_at      TEXT,
+                created_at      TEXT DEFAULT (datetime('now')),
+                last_seen_at    TEXT
             );
         """)
 
@@ -425,6 +445,70 @@ def get_message_thread(channel: str, identifier: str) -> dict | None:
             (channel, identifier)
         ).fetchone()
         return dict(row) if row else None
+
+
+# ------------------------------------------------------------------
+# Response patterns (auto-approval)
+# ------------------------------------------------------------------
+
+def upsert_pattern(intent_label: str):
+    """Create a pattern row if absent; bump last_seen_at. No-op if intent_label is empty."""
+    if not intent_label:
+        return
+    with get_db() as conn:
+        conn.execute("""
+            INSERT INTO response_patterns (intent_label, status, last_seen_at)
+            VALUES (?, 'learning', datetime('now'))
+            ON CONFLICT(intent_label) DO UPDATE SET
+                last_seen_at = datetime('now')
+        """, (intent_label,))
+
+
+def get_pattern(intent_label: str) -> dict | None:
+    if not intent_label:
+        return None
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM response_patterns WHERE intent_label = ?", (intent_label,)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def list_patterns() -> list[dict]:
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM response_patterns ORDER BY last_seen_at DESC"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def set_pattern_status(intent_label: str, status: str):
+    """Set status to 'learning' | 'auto' | 'manual_locked'. Updates promoted_at / demoted_at accordingly."""
+    now = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+    with get_db() as conn:
+        if status == 'auto':
+            conn.execute(
+                "UPDATE response_patterns SET status = ?, promoted_at = ? WHERE intent_label = ?",
+                (status, now, intent_label)
+            )
+        elif status == 'manual_locked':
+            conn.execute(
+                "UPDATE response_patterns SET status = ?, demoted_at = ? WHERE intent_label = ?",
+                (status, now, intent_label)
+            )
+        else:
+            conn.execute(
+                "UPDATE response_patterns SET status = ? WHERE intent_label = ?",
+                (status, intent_label)
+            )
+
+
+def mark_approval_edited(approval_id: str):
+    """Flip was_edited to 1. Idempotent."""
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE pending_approvals SET was_edited = 1 WHERE id = ?", (approval_id,)
+        )
 
 
 # Initialise on import

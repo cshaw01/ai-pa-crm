@@ -23,6 +23,7 @@ from pydantic import BaseModel
 
 import db
 import backup_sync
+import response_patterns
 
 # ------------------------------------------------------------------
 # Config
@@ -264,26 +265,30 @@ async def update_draft(approval_id: str, body: DraftUpdate):
     approval = db.get_approval(approval_id)
     if not approval:
         raise HTTPException(status_code=404, detail="Approval not found")
-    db.update_approval(approval_id, draft=body.draft)
+    db.update_approval(approval_id, draft=body.draft, was_edited=1)
     return {"ok": True}
 
 
-@app.post("/api/approvals/{approval_id}/accept")
-async def accept_approval(approval_id: str):
-    approval = db.get_approval(approval_id)
-    if not approval:
-        raise HTTPException(status_code=404, detail="Approval not found")
-    if approval['status'] != 'pending':
-        raise HTTPException(status_code=400, detail="Approval already actioned")
+def _send_outbound(approval: dict) -> None:
+    """
+    Dispatch an approved draft to the external channel.
 
-    # If this approval came from WhatsApp, actually send it via the sidecar.
-    # On failure we bail out BEFORE marking accepted so the owner can retry.
-    if approval['channel'] == 'whatsapp':
+    Raises HTTPException on failure with the same status codes the UI depends on:
+      - 400 missing identifier
+      - 409 outside_window (Meta channels only; client switches to escape-hatch)
+      - 502 send failed (upstream API error)
+      - 503 WhatsApp sidecar unreachable
+
+    Returns None silently for channels where there's no API to call (web,
+    telegram, email) — those rely on the owner to relay the message manually.
+    """
+    channel = approval.get('channel')
+
+    if channel == 'whatsapp':
         if not approval.get('identifier'):
             raise HTTPException(status_code=400, detail="Missing recipient identifier")
         try:
-            import requests as _r
-            resp = _r.post(
+            resp = _rq.post(
                 f"{WA_SIDECAR_URL}/send",
                 json={"to": approval['identifier'], "text": approval['draft']},
                 timeout=20,
@@ -300,42 +305,66 @@ async def accept_approval(approval_id: str):
             raise
         except Exception as e:
             raise HTTPException(status_code=502, detail=f"WhatsApp send error: {e}")
+        return
 
-    # Messenger / Instagram — only auto-send within the 24h window.
-    # Outside the window, reject here and let the client take the escape-hatch
-    # path via /mark-awaiting-done + /done.
-    if approval['channel'] in ('messenger', 'instagram'):
+    if channel in ('messenger', 'instagram'):
         if not approval.get('identifier'):
             raise HTTPException(status_code=400, detail="Missing recipient identifier")
         if not _meta_window_open(approval.get('last_inbound_at')):
-            raise HTTPException(
-                status_code=409,
-                detail="outside_window",  # client switches to escape-hatch flow on this code
-            )
-        _meta_send(approval['channel'], approval['identifier'], approval['draft'])
+            raise HTTPException(status_code=409, detail="outside_window")
+        _meta_send(channel, approval['identifier'], approval['draft'])
+        return
 
-    # Mark as accepted
+    # web / telegram / email — nothing to send; caller relays manually.
+    return
+
+
+def _run_post_send(approval: dict, kind: str) -> None:
+    """
+    Fire the POST_SEND Claude prompt and sync the resulting wiki diff to GitHub.
+
+    Always best-effort: errors inside the POST_SEND flow never surface to the
+    caller, because the message has already been sent by the time we get here.
+    The worst case is a missed wiki interaction-log row, which the owner can
+    add by hand later.
+    """
+    try:
+        is_new = 'New contact' in (approval.get('analysis') or '')
+        prompt = (
+            f"[POST_SEND]\n"
+            f"contact_identifier: {approval.get('identifier')}\n"
+            f"identifier_type: {approval.get('identifier_type')}\n"
+            f"channel: {approval.get('channel')}\n"
+            f"is_new_contact: {'true' if is_new else 'false'}\n"
+            f"contact_file: NONE\n"
+            f"original_message: {approval.get('original_message')}\n"
+            f"sent_reply: {approval.get('draft')}"
+        )
+        call_claude(prompt)
+    except Exception as e:
+        print(f"[post_send] Claude error (non-fatal): {e}", flush=True)
+    _sync_wiki_after_post_send(approval, kind=kind)
+
+
+@app.post("/api/approvals/{approval_id}/accept")
+async def accept_approval(approval_id: str):
+    approval = db.get_approval(approval_id)
+    if not approval:
+        raise HTTPException(status_code=404, detail="Approval not found")
+    if approval['status'] != 'pending':
+        raise HTTPException(status_code=400, detail="Approval already actioned")
+
+    # Dispatch via the channel's API (WhatsApp sidecar / Meta Graph).
+    # Raises HTTPException on failure, BEFORE we mark accepted, so the owner
+    # can retry or fall through to the escape-hatch flow.
+    _send_outbound(approval)
+
     db.update_approval(approval_id, status='accepted')
     db.log_event(approval['identifier'], approval['identifier_type'],
                  approval['channel'], 'out', 'message_sent',
                  approval['draft'][:100])
 
-    # Update CRM via Claude
-    is_new = 'New contact' in (approval['analysis'] or '')
-    prompt = (
-        f"[POST_SEND]\n"
-        f"contact_identifier: {approval['identifier']}\n"
-        f"identifier_type: {approval['identifier_type']}\n"
-        f"channel: {approval['channel']}\n"
-        f"is_new_contact: {'true' if is_new else 'false'}\n"
-        f"contact_file: NONE\n"
-        f"original_message: {approval['original_message']}\n"
-        f"sent_reply: {approval['draft']}"
-    )
-    call_claude(prompt)
-
-    # Sync wiki changes produced by POST_SEND to GitHub (non-fatal on failure)
-    _sync_wiki_after_post_send(approval, kind='accept')
+    _run_post_send(approval, kind='accept')
 
     return {"ok": True, "draft": approval['draft']}
 
@@ -388,21 +417,7 @@ async def mark_done(approval_id: str):
         'out', 'message_sent_manual', approval['draft'][:100],
     )
 
-    # POST_SEND to update wiki + calendar, same as the auto-send path
-    is_new = 'New contact' in (approval['analysis'] or '')
-    prompt = (
-        f"[POST_SEND]\n"
-        f"contact_identifier: {approval['identifier']}\n"
-        f"identifier_type: {approval['identifier_type']}\n"
-        f"channel: {approval['channel']}\n"
-        f"is_new_contact: {'true' if is_new else 'false'}\n"
-        f"contact_file: NONE\n"
-        f"original_message: {approval['original_message']}\n"
-        f"sent_reply: {approval['draft']}"
-    )
-    call_claude(prompt)
-
-    _sync_wiki_after_post_send(approval, kind='done')
+    _run_post_send(approval, kind='done')
 
     return {"ok": True}
 
@@ -431,7 +446,7 @@ async def edit_approval(approval_id: str, body: EditRequest):
     draft_match = re.search(r'===DRAFT===(.*?)===END===', response, re.DOTALL)
     new_draft = draft_match.group(1).strip() if draft_match else response.strip()
 
-    db.update_approval(approval_id, draft=new_draft)
+    db.update_approval(approval_id, draft=new_draft, was_edited=1)
     return {"draft": new_draft}
 
 
@@ -505,12 +520,57 @@ async def _analyse_inbox(approval_id: str, body: InboxSubmit):
 
     analysis_match = re.search(r'\*📋 ANALYSIS\*(.*?)===DRAFT===', response, re.DOTALL)
     draft_match = re.search(r'===DRAFT===(.*?)===END===', response, re.DOTALL)
+    intent_match = re.search(r'===INTENT===(.*?)===END===', response, re.DOTALL)
     analysis = analysis_match.group(1).strip() if analysis_match else ''
     draft = draft_match.group(1).strip() if draft_match else response.strip()
     if not draft:
         draft = "[No draft generated — see analysis]"
+    intent_label = _normalise_intent_label(intent_match.group(1) if intent_match else '')
 
-    db.update_approval(approval_id, analysis=analysis, draft=draft)
+    db.update_approval(approval_id, analysis=analysis, draft=draft, intent_label=intent_label)
+    if intent_label:
+        db.upsert_pattern(intent_label)
+
+    # Auto-approval bypass: if this intent has been promoted to 'auto' AND the
+    # sender is a known contact, send the draft immediately instead of queueing
+    # for owner review. Safety rails live in response_patterns.should_auto_send.
+    if response_patterns.should_auto_send(intent_label, analysis):
+        approval = db.get_approval(approval_id)
+        if approval and approval.get('status') == 'pending':
+            try:
+                _send_outbound(approval)
+            except HTTPException as e:
+                # Send failed — leave pending, attach note for the owner.
+                db.update_approval(
+                    approval_id,
+                    error_note=f"auto-send failed: {e.detail}",
+                )
+                return
+            except Exception as e:
+                db.update_approval(approval_id, error_note=f"auto-send error: {e}")
+                return
+
+            db.update_approval(approval_id, status='accepted', kind='auto')
+            db.log_event(
+                approval['identifier'], approval['identifier_type'],
+                approval['channel'], 'out', 'auto_sent',
+                approval['draft'][:100],
+            )
+            _run_post_send(approval, kind='auto')
+
+
+def _normalise_intent_label(raw: str) -> str:
+    """Sanitise AI-generated intent labels to [a-z0-9-], max 80 chars. Empty → ''."""
+    if not raw:
+        return ''
+    s = raw.strip().lower()
+    # Collapse whitespace to single hyphen
+    s = re.sub(r'\s+', '-', s)
+    # Drop anything outside the allowed character set
+    s = re.sub(r'[^a-z0-9-]', '', s)
+    # Collapse repeated hyphens, trim leading/trailing
+    s = re.sub(r'-+', '-', s).strip('-')
+    return s[:80]
 
 
 # ------------------------------------------------------------------
@@ -1374,6 +1434,55 @@ async def meta_disconnect(body: dict):
 async def backup_status():
     """Return info about the most recent wiki commit, for dashboard surfacing."""
     return backup_sync.last_commit_info(WIKI_DIR)
+
+
+# ------------------------------------------------------------------
+# Routes — response patterns (auto-approval)
+# ------------------------------------------------------------------
+
+@app.get("/api/patterns")
+async def list_patterns():
+    """Return every known intent pattern with computed eligibility stats."""
+    return {"patterns": response_patterns.list_all_patterns()}
+
+
+@app.post("/api/patterns/{intent_label}/enable")
+async def enable_pattern(intent_label: str):
+    """Promote a pattern to 'auto'. Allowed from 'learning' (if eligible) or 'manual_locked'."""
+    pattern = db.get_pattern(intent_label)
+    if not pattern:
+        raise HTTPException(status_code=404, detail="Pattern not found")
+    current = pattern.get('status', 'learning')
+    if current == 'auto':
+        return {"ok": True, "status": "auto", "already": True}
+    if current == 'learning':
+        stats = response_patterns.compute_pattern_stats(intent_label)
+        if not stats['is_eligible']:
+            raise HTTPException(status_code=400, detail="Pattern is not yet eligible")
+    db.set_pattern_status(intent_label, 'auto')
+    return {"ok": True, "status": "auto"}
+
+
+@app.post("/api/patterns/{intent_label}/disable")
+async def disable_pattern(intent_label: str):
+    """Revert a pattern from 'auto' to 'manual_locked' so future matches queue again."""
+    pattern = db.get_pattern(intent_label)
+    if not pattern:
+        raise HTTPException(status_code=404, detail="Pattern not found")
+    if pattern.get('status') != 'auto':
+        raise HTTPException(status_code=400, detail="Pattern is not currently auto")
+    db.set_pattern_status(intent_label, 'manual_locked')
+    return {"ok": True, "status": "manual_locked"}
+
+
+@app.post("/api/patterns/{intent_label}/reset")
+async def reset_pattern(intent_label: str):
+    """Clear any lock/promotion and put the pattern back into 'learning'."""
+    pattern = db.get_pattern(intent_label)
+    if not pattern:
+        raise HTTPException(status_code=404, detail="Pattern not found")
+    db.set_pattern_status(intent_label, 'learning')
+    return {"ok": True, "status": "learning"}
 
 
 # ----- Outbound send (Graph API) --------------------------------------------

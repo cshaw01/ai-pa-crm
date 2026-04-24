@@ -88,10 +88,25 @@ psql "$DB" -c "INSERT INTO event_log (identifier, identifier_type, channel, dire
 ===DRAFT===
 [Ready-to-send reply. Friendly, professional, plain text only — no markdown, no asterisks. 3–5 sentences. Sign off as "— [Business Name]"]
 ===END===
+
+===INTENT===
+[kebab-case-intent-label]
+===END===
 ```
 
 **New contact:**
-Same format, with analysis noting: "New contact — no existing record. Lead file will be created on send."
+Same format, with analysis noting: "New contact — no existing record. Lead file will be created on send." Prefix the intent label with `new-` (e.g. `new-pricing-2hp-install`).
+
+### Step 5 — Classify the intent
+
+Output a short kebab-case label summarising the customer's intent — this lets the system group similar questions so the owner can automate the ones they reply to identically every time.
+
+- **Examples:** `pricing-2hp-install`, `warranty-claim`, `reschedule-service`, `quote-request`, `status-check`, `spare-parts-availability`, `service-hours`.
+- **Be specific when the answer depends on specifics.** `pricing-2hp-install` and `pricing-5hp-install` are different intents because the answer is different. Don't collapse them just because the topic is similar — a different factor that changes the answer means a different label.
+- **Be consistent.** If you've classified this kind of message before, reuse the same label. Word order matters: pick the clearest ordering and stick with it.
+- **New-contact prefix.** If this is a new contact (no existing wiki record), prefix the label with `new-`.
+- **Uncertain?** If the message is ambiguous or doesn't fit a repeatable pattern, use `unclassified`.
+- **Format:** lowercase letters, digits, and hyphens only. No spaces, no punctuation, max ~60 chars.
 
 ---
 
