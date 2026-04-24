@@ -33,6 +33,7 @@ This doc covers initial setup, token rotation, tenant onboarding, and restore pr
 | Container boot | Initial snapshot if the repo is brand-new; nothing otherwise |
 | `accept_approval` (in-window send completes) | `AI: accept: <channel> reply to <sender>` — any wiki changes from POST_SEND |
 | `mark_done` (escape-hatch manual send closed) | `AI: done: <channel> reply to <sender>` — same |
+| Auto-approval fires (`kind='auto'`, pattern status=`auto`) | `AI: auto: <channel> reply to <sender>` — any wiki changes from POST_SEND |
 | Nightly at 04:XX UTC (staggered per tenant) | `nightly: SQLite dump <date>` with the day's `.db-dumps/crm-<date>.sql` |
 
 Commits that would be empty are no-ops. Pushes that fail are logged and retried on the next commit.

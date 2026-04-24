@@ -6,7 +6,7 @@ A durable list of things we've agreed to build *later*, with enough context that
 
 ## Nightly proactive hygiene sweep
 
-**Why deferred:** Claude CLI currently runs on a generous token allowance so cost isn't pressing. Value kicks in meaningfully only after auto-approval patterns (in progress) have started compounding. Revisit once we have real pattern data to act on.
+**Why deferred:** Claude CLI currently runs on a generous token allowance so cost isn't pressing. Value kicks in meaningfully only after auto-approval patterns (shipped 2026-04-24, commit `1a9a2e0`) have started compounding. Revisit once we have real pattern data to act on.
 
 **What to build when it's time:**
 

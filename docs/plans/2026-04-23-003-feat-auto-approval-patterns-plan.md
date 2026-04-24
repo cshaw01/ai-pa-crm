@@ -1,8 +1,11 @@
 ---
 title: "feat: Auto-approval of repeat Q&A patterns"
 type: feat
-status: active
+status: shipped
 date: 2026-04-23
+shipped_at: 2026-04-24
+shipped_commit: 1a9a2e0
+retrospective: docs/solutions/architecture-patterns/compounding-automation-via-learned-approval-patterns-2026-04-23.md
 ---
 
 # feat: Auto-approval of repeat Q&A patterns
