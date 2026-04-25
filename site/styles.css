@@ -1,0 +1,149 @@
+/* Chiefpa marketing-site styles. Sits on top of Tailwind v3 CDN. */
+/* Brand colours align with the tenant SPA so redirects feel seamless. */
+
+:root {
+  --brand-blue: #2563eb;
+  --brand-blue-dark: #1d4ed8;
+  --brand-blue-bright: #3b82f6;
+  --brand-blue-soft: #dbeafe;
+  --text-strong: #0f172a;
+  --text-body: #334155;
+  --text-muted: #64748b;
+  --bg: #ffffff;
+  --bg-soft: #f8fafc;
+  --bg-deep: #0f172a;
+  --border: #e2e8f0;
+  --radius: 0.625rem;
+  --max-w: 72rem;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  color: var(--text-body);
+  background: var(--bg);
+  font-size: 17px;
+  line-height: 1.6;
+}
+
+h1, h2, h3, h4 {
+  color: var(--text-strong);
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+
+a {
+  color: var(--brand-blue);
+  text-decoration: none;
+}
+a:hover { color: var(--brand-blue-dark); }
+
+/* Layout helpers */
+.cp-container { max-width: var(--max-w); margin-left: auto; margin-right: auto; padding-left: 1.5rem; padding-right: 1.5rem; }
+.cp-section { padding-top: 5rem; padding-bottom: 5rem; }
+.cp-section-tight { padding-top: 3rem; padding-bottom: 3rem; }
+
+/* Buttons */
+.cp-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  border-radius: var(--radius);
+  font-weight: 600;
+  font-size: 0.95rem;
+  transition: background 120ms ease, color 120ms ease, transform 120ms ease;
+  white-space: nowrap;
+}
+.cp-btn-primary { background: var(--brand-blue); color: #fff; }
+.cp-btn-primary:hover { background: var(--brand-blue-dark); color: #fff; }
+.cp-btn-primary:active { transform: translateY(1px); }
+.cp-btn-secondary { background: transparent; color: var(--text-strong); border: 1px solid var(--border); }
+.cp-btn-secondary:hover { background: var(--bg-soft); color: var(--text-strong); }
+
+/* Cards */
+.cp-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+}
+
+/* Hero gradient — only used on the landing hero */
+.cp-hero-bg {
+  background:
+    radial-gradient(60% 40% at 20% 0%, rgba(37, 99, 235, 0.08), transparent 60%),
+    radial-gradient(50% 30% at 100% 10%, rgba(59, 130, 246, 0.07), transparent 70%),
+    var(--bg);
+}
+
+/* Subtle separator under the header on inner pages */
+.cp-header-shadow { box-shadow: 0 1px 0 var(--border); }
+
+/* Prose width for legal pages */
+.cp-prose { max-width: 44rem; margin-left: auto; margin-right: auto; }
+.cp-prose p { margin-bottom: 1rem; }
+.cp-prose h2 { margin-top: 2.5rem; margin-bottom: 0.75rem; font-size: 1.5rem; font-weight: 700; }
+.cp-prose h3 { margin-top: 1.75rem; margin-bottom: 0.5rem; font-size: 1.125rem; font-weight: 600; }
+.cp-prose ul { list-style: disc; padding-left: 1.5rem; margin-bottom: 1rem; }
+.cp-prose ul li { margin-bottom: 0.4rem; }
+.cp-prose strong { color: var(--text-strong); }
+
+/* Form */
+.cp-input,
+.cp-select {
+  width: 100%;
+  padding: 0.65rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font: inherit;
+  color: var(--text-strong);
+  background: var(--bg);
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.cp-input:focus,
+.cp-select:focus {
+  outline: none;
+  border-color: var(--brand-blue);
+  box-shadow: 0 0 0 3px var(--brand-blue-soft);
+}
+.cp-label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-strong);
+  margin-bottom: 0.4rem;
+}
+.cp-help { font-size: 0.825rem; color: var(--text-muted); margin-top: 0.3rem; }
+.cp-error { font-size: 0.825rem; color: #b91c1c; margin-top: 0.3rem; min-height: 1.1em; }
+
+/* Industry tile */
+.cp-tile {
+  display: block;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  background: var(--bg);
+  transition: border-color 120ms ease, transform 120ms ease;
+}
+.cp-tile:hover {
+  border-color: var(--brand-blue);
+  transform: translateY(-1px);
+}
+.cp-tile h3 { color: var(--text-strong); font-size: 1.125rem; font-weight: 600; margin-bottom: 0.4rem; }
+.cp-tile p { color: var(--text-muted); font-size: 0.95rem; line-height: 1.5; }
+
+/* Header nav */
+.cp-nav-link { color: var(--text-body); font-weight: 500; }
+.cp-nav-link:hover { color: var(--text-strong); }
+
+/* Footer */
+.cp-footer { background: var(--bg-soft); border-top: 1px solid var(--border); }
+.cp-footer a { color: var(--text-body); }
+.cp-footer a:hover { color: var(--brand-blue); }

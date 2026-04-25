@@ -111,9 +111,9 @@ Submit for review from **App Review → Permissions and Features**. Request:
 - `business_management`
 
 Meta will ask for:
-- **Privacy Policy URL** (public, must mention how you store messages)
-- **Data Deletion URL** (or instructions)
-- **Terms of Service URL**
+- **Privacy Policy URL**: <https://chiefpa.com/privacy.html> — source: `site/privacy.html`
+- **Data Deletion URL**: <https://chiefpa.com/data-deletion.html> — source: `site/data-deletion.html`
+- **Terms of Service URL**: <https://chiefpa.com/terms.html> — source: `site/terms.html`
 - A **screencast** showing the integration end-to-end:
   1. Tenant clicks Connect in the dashboard
   2. Facebook Login popup, pick Page, grant permissions
@@ -122,6 +122,11 @@ Meta will ask for:
   5. Customer receives the reply
 
 Typical turnaround: 3–7 business days.
+
+The three legal pages live in the marketing-site repo at `site/`. To edit
+the wording, change the corresponding `site/*.html` file, bump its
+"Last updated" date, and push to main — Cloudflare Pages auto-deploys.
+Full deploy and maintenance runbook: `docs/site-deploy.md`.
 
 **Before review, you can already use the code** by listing test accounts under
 Roles. They'll be able to send/receive via the app without Meta approval.

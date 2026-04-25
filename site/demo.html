@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Try the demo — Chiefpa</title>
+  <meta name="description" content="Five short questions about your business so we can route you to the most relevant Chiefpa demo tenant. Takes about a minute." />
+  <meta property="og:title" content="Try the Chiefpa demo" />
+  <meta property="og:description" content="Five short questions about your business and we'll route you to the most relevant demo tenant." />
+  <meta property="og:image" content="https://chiefpa.com/og-default.png" />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://chiefpa.com/demo.html" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="robots" content="index,follow" />
+  <link rel="canonical" href="https://chiefpa.com/demo.html" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/styles.css" />
+  <script src="/tracking.js" defer></script>
+  <!-- Cloudflare Turnstile -->
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" defer></script>
+</head>
+<body>
+  <div data-partial="header"></div>
+
+  <main class="cp-section">
+    <div class="cp-container">
+      <div class="max-w-2xl mx-auto">
+        <p class="text-sm font-semibold uppercase tracking-wider mb-3" style="color: var(--brand-blue);">Demo</p>
+        <h1 class="text-3xl sm:text-4xl font-bold mb-4">Tell us about your business.</h1>
+        <p class="mb-8" style="color: var(--text-body);">Five quick fields and we'll drop you into the demo tenant whose conversations look most like yours. About a minute. We'll only contact you if you say yes.</p>
+
+        <form id="leadForm" class="space-y-6" novalidate>
+          <div>
+            <label class="cp-label" for="name">Your name</label>
+            <input class="cp-input" type="text" id="name" name="name" autocomplete="name" maxlength="80" required />
+            <div class="cp-error" data-error-for="name"></div>
+          </div>
+
+          <div>
+            <label class="cp-label" for="email">Email</label>
+            <input class="cp-input" type="email" id="email" name="email" autocomplete="email" required />
+            <p class="cp-help">We use this to send the demo link and nothing else unless you ask.</p>
+            <div class="cp-error" data-error-for="email"></div>
+          </div>
+
+          <div>
+            <label class="cp-label" for="industry">Industry</label>
+            <select class="cp-select" id="industry" name="industry" required>
+              <option value="">Pick one…</option>
+              <option value="hvac">Aircon / HVAC servicing</option>
+              <option value="chiropractor">Chiropractic / Physiotherapy</option>
+              <option value="insurance">Insurance brokerage</option>
+              <option value="wellness">Wellness / Spa</option>
+              <option value="salon">Salon / Beauty</option>
+              <option value="yoga">Yoga / Pilates studio</option>
+              <option value="gym">Gym / Fitness</option>
+              <option value="restaurant">Restaurant / F&amp;B</option>
+              <option value="real-estate">Real estate</option>
+              <option value="other">Something else</option>
+            </select>
+            <div class="cp-error" data-error-for="industry"></div>
+          </div>
+
+          <div class="grid gap-6 sm:grid-cols-2">
+            <div>
+              <label class="cp-label" for="years_in_business">Years in business</label>
+              <input class="cp-input" type="number" id="years_in_business" name="years_in_business" min="0" max="100" inputmode="numeric" />
+              <p class="cp-help">Optional.</p>
+              <div class="cp-error" data-error-for="years_in_business"></div>
+            </div>
+
+            <div>
+              <label class="cp-label" for="annual_revenue">Estimated annual revenue</label>
+              <select class="cp-select" id="annual_revenue" name="annual_revenue" required>
+                <option value="">Pick a range…</option>
+                <option value="lt-100k">Under SGD 100k</option>
+                <option value="100k-500k">SGD 100k – 500k</option>
+                <option value="500k-1m">SGD 500k – 1M</option>
+                <option value="1m-plus">Over SGD 1M</option>
+                <option value="prefer-not-say">Prefer not to say</option>
+              </select>
+              <div class="cp-error" data-error-for="annual_revenue"></div>
+            </div>
+          </div>
+
+          <!--
+            Cloudflare Turnstile site key. Replace before going live.
+            See docs/site-deploy.md → "Initial Setup → Provision env vars".
+            Cloudflare's always-pass test key (for local dev): 1x00000000000000000000AA
+          -->
+          <div class="cf-turnstile" data-sitekey="YOUR_TURNSTILE_SITE_KEY"></div>
+          <div class="cp-error" data-error-for="turnstile"></div>
+
+          <div class="flex items-center gap-4">
+            <button type="submit" id="leadSubmit" class="cp-btn cp-btn-primary">Continue to demo</button>
+            <span id="leadStatus" class="text-sm" style="color: var(--text-muted);"></span>
+          </div>
+
+          <p class="text-sm" style="color: var(--text-muted);">By submitting, you agree to our <a href="/privacy.html">privacy policy</a>.</p>
+        </form>
+      </div>
+    </div>
+  </main>
+
+  <div data-partial="footer"></div>
+  <script src="/partials.js" defer></script>
+
+  <script>
+    (function () {
+      function ready(fn) {
+        if (document.readyState !== 'loading') fn();
+        else document.addEventListener('DOMContentLoaded', fn);
+      }
+
+      function getQueryParam(name) {
+        var m = (window.location.search || '').match(new RegExp('[?&]' + name + '=([^&]*)'));
+        return m ? decodeURIComponent(m[1].replace(/\+/g, ' ')) : null;
+      }
+
+      function setError(field, message) {
+        var el = document.querySelector('[data-error-for="' + field + '"]');
+        if (el) el.textContent = message || '';
+      }
+
+      function clearAllErrors() {
+        document.querySelectorAll('[data-error-for]').forEach(function (el) { el.textContent = ''; });
+      }
+
+      ready(function () {
+        // Pre-fill industry from ?industry=…
+        var prefill = getQueryParam('industry');
+        if (prefill) {
+          var sel = document.getElementById('industry');
+          if (sel) {
+            var opt = Array.prototype.slice.call(sel.options).find(function (o) { return o.value === prefill; });
+            if (opt) sel.value = prefill;
+          }
+        }
+
+        var form = document.getElementById('leadForm');
+        var btn = document.getElementById('leadSubmit');
+        var status = document.getElementById('leadStatus');
+
+        form.addEventListener('submit', function (e) {
+          e.preventDefault();
+          clearAllErrors();
+          btn.disabled = true;
+          status.textContent = 'Submitting…';
+
+          var fd = new FormData(form);
+          var payload = {
+            name: (fd.get('name') || '').toString().trim(),
+            email: (fd.get('email') || '').toString().trim(),
+            industry: (fd.get('industry') || '').toString().trim(),
+            years_in_business: (fd.get('years_in_business') || '').toString().trim(),
+            annual_revenue: (fd.get('annual_revenue') || '').toString().trim(),
+            cf_turnstile_token: (fd.get('cf-turnstile-response') || '').toString(),
+          };
+
+          fetch('/api/lead', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(payload),
+          })
+            .then(function (res) { return res.json().then(function (data) { return { status: res.status, data: data }; }); })
+            .then(function (result) {
+              if (result.status === 200 && result.data && result.data.ok && result.data.redirect) {
+                status.textContent = 'Got it. Sending you in…';
+                window.location.href = result.data.redirect;
+                return;
+              }
+
+              btn.disabled = false;
+              status.textContent = '';
+
+              if (result.data && result.data.errors) {
+                Object.keys(result.data.errors).forEach(function (k) { setError(k, result.data.errors[k]); });
+                return;
+              }
+              if (result.data && result.data.error === 'verification_failed') {
+                setError('turnstile', 'Please complete the verification and try again.');
+                if (window.turnstile) window.turnstile.reset();
+                return;
+              }
+              if (result.status === 429) {
+                status.textContent = 'Too many attempts — wait a minute and try again.';
+                return;
+              }
+
+              status.textContent = 'Something went wrong. Try again, or email us.';
+            })
+            .catch(function () {
+              btn.disabled = false;
+              status.textContent = 'Network error. Try again, or email us.';
+            });
+        });
+      });
+    })();
+  </script>
+</body>
+</html>

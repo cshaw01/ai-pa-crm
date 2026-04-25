@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Privacy policy — Chiefpa</title>
+  <meta name="description" content="How Chiefpa collects, stores, shares, and deletes data. Plain-English privacy policy for tenants and the customers their tenants serve." />
+  <meta property="og:title" content="Chiefpa privacy policy" />
+  <meta property="og:description" content="What data Chiefpa collects, how it's stored, who it's shared with, and how to request deletion." />
+  <meta property="og:image" content="https://chiefpa.com/og-default.png" />
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="https://chiefpa.com/privacy.html" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="robots" content="index,follow" />
+  <link rel="canonical" href="https://chiefpa.com/privacy.html" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/styles.css" />
+  <script src="/tracking.js" defer></script>
+</head>
+<body>
+  <div data-partial="header"></div>
+
+  <main class="cp-section">
+    <div class="cp-container cp-prose">
+      <p class="text-sm font-semibold uppercase tracking-wider mb-4" style="color: var(--brand-blue);">Legal</p>
+      <h1 class="text-4xl font-bold mb-3">Privacy policy</h1>
+      <p class="text-sm" style="color: var(--text-muted);">Last updated: 25 April 2026</p>
+
+      <p class="mt-8">
+        Chiefpa ("we", "us") provides an AI-assisted customer-conversation platform for service businesses. This policy explains what data we handle, how it's stored, who it's shared with, and how to ask for it to be deleted. It applies to two audiences: <strong>tenants</strong> (the businesses that use Chiefpa) and the <strong>end customers</strong> whose messages flow through it.
+      </p>
+
+      <h2>Who controls what</h2>
+      <p>
+        For each tenant's data, the <strong>tenant is the data controller</strong> — they own the relationship with their customers and decide what gets recorded. Chiefpa is the <strong>data processor</strong> — we run the software, store the data, and delete it on request. If you're an end customer who messaged a service business that uses Chiefpa and you have questions about your data, you can email us directly at <a href="mailto:privacy@chiefpa.com">privacy@chiefpa.com</a> or contact the business itself; both routes lead to the same outcome.
+      </p>
+
+      <h2>What we collect</h2>
+      <p>From end customers (when they message a tenant via a channel Chiefpa is connected to):</p>
+      <ul>
+        <li>The content of messages sent and received.</li>
+        <li>Channel identifiers — phone numbers in E.164 format, email addresses, Messenger Page-Scoped IDs (PSIDs), Instagram-Scoped IDs (IGSIDs), Telegram user IDs, the IP address of inbound web submissions.</li>
+        <li>Sender display names where the channel surfaces them.</li>
+        <li>Timestamps of each message and event.</li>
+      </ul>
+      <p>From tenants (the operators):</p>
+      <ul>
+        <li>Account information needed to log in and operate the dashboard.</li>
+        <li>Notes, contact records, calendar events, and other entries the tenant adds to their internal wiki.</li>
+        <li>Approve / edit / reject actions taken on AI drafts (used to learn the tenant's reply style).</li>
+        <li>Connection credentials for messaging channels (e.g. Meta Page access tokens). These are encrypted at rest.</li>
+        <li>Operational telemetry: dashboard logins, channel-connect events, message send/receive counts.</li>
+      </ul>
+      <p>From the demo lead form on this site: name, email, years in business, an estimated annual-revenue band, and self-declared industry. Used to route the visitor to the most relevant demo and follow up.</p>
+
+      <h2>What we don't collect</h2>
+      <ul>
+        <li>We don't run third-party advertising or social-media tracking pixels on end-customer-facing surfaces. (Pixels may run on this marketing site once enabled — see "Marketing-site analytics" below.)</li>
+        <li>We don't read messages on channels a tenant hasn't explicitly connected.</li>
+        <li>We don't sell data. Ever.</li>
+      </ul>
+
+      <h2>How we store it</h2>
+      <ul>
+        <li>Each tenant runs in an isolated software container on a Cloudflare-fronted virtual private server hosted in Singapore. Their data does not commingle with any other tenant's data.</li>
+        <li>Primary storage is a per-tenant SQLite database holding messages, contacts, calendar events, approvals, and audit events.</li>
+        <li>Each tenant also has a private GitHub repository under our <code>chiefpa-tenant-data</code> organisation, which holds their markdown wiki and nightly SQLite snapshots. This is our backup mechanism.</li>
+        <li>Channel access tokens (Meta Page tokens, etc.) are encrypted at rest with a per-tenant Fernet symmetric key. The key is generated at provisioning and lives only in that tenant's container environment.</li>
+        <li>Communication between the visitor's browser and our servers is encrypted in transit (HTTPS only).</li>
+      </ul>
+
+      <h2>Who we share it with</h2>
+      <p>To deliver the service, customer message content is shared with the following sub-processors:</p>
+      <ul>
+        <li><strong>Anthropic</strong> — to generate AI drafts. Anthropic processes messages under their published privacy and data-handling commitments and does not use API content to train models by default. See <a href="https://www.anthropic.com/privacy" rel="noopener">anthropic.com/privacy</a>.</li>
+        <li><strong>Meta Platforms</strong> — for messages sent or received via Messenger and Instagram. See <a href="https://www.facebook.com/privacy/policy" rel="noopener">Meta's privacy policy</a>.</li>
+        <li><strong>WhatsApp</strong> (a Meta service) — for messages on WhatsApp. Same policy reference.</li>
+        <li><strong>Telegram</strong> — for messages on Telegram, where connected. See <a href="https://telegram.org/privacy" rel="noopener">Telegram's privacy policy</a>.</li>
+        <li><strong>GitHub</strong> — to store nightly backups (wiki + database dump) in private repositories. See <a href="https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement" rel="noopener">GitHub's privacy statement</a>.</li>
+        <li><strong>Cloudflare</strong> — as our edge network and DNS provider; sees request metadata but not message bodies on inbound webhooks (those are decrypted at our origin). See <a href="https://www.cloudflare.com/privacypolicy/" rel="noopener">Cloudflare's privacy policy</a>.</li>
+      </ul>
+      <p>We do not share data with advertisers, data brokers, or any party not listed above. We do not let one tenant see another tenant's data.</p>
+
+      <h2>How long we keep it</h2>
+      <ul>
+        <li>While a tenant's account is active, their data is retained.</li>
+        <li>If a tenant cancels, we retain the data for a <strong>30-day grace period</strong> during which they can request a full export. After that, primary data is deleted from our servers and the GitHub backup repository is removed.</li>
+        <li>Backup snapshots that pre-date deletion are rotated out within a further 30 days.</li>
+        <li>An anonymised audit log entry recording the fact of deletion is retained for an additional 90 days for accountability. It contains no message content.</li>
+      </ul>
+
+      <h2>Your rights</h2>
+      <p>If you're an end customer:</p>
+      <ul>
+        <li>Request a copy of the data Chiefpa holds about you.</li>
+        <li>Request correction of inaccurate data.</li>
+        <li>Request deletion (see <a href="/data-deletion.html">Data deletion instructions</a>).</li>
+        <li>Withdraw consent at any time by asking the business not to message you further.</li>
+      </ul>
+      <p>If you're a tenant: you can access, export, or delete any data in your account through the dashboard. Cancel by emailing <a href="mailto:privacy@chiefpa.com">privacy@chiefpa.com</a>.</p>
+
+      <h2>How to contact us</h2>
+      <p>Email <a href="mailto:privacy@chiefpa.com">privacy@chiefpa.com</a>. We reply to data-rights requests within 7 business days.</p>
+
+      <h2>Marketing-site analytics</h2>
+      <p>
+        This marketing site (<code>chiefpa.com</code>) may load Meta Pixel and Google Analytics tags to measure how visitors find us. These tags do not run inside the tenant dashboards and never see customer messages. Any pixel-collected data is governed by the respective vendor's privacy policy. The lead form's email field is not transmitted to either pixel.
+      </p>
+
+      <h2>Singapore PDPA &amp; international transfers</h2>
+      <p>
+        Chiefpa is operated from Singapore and the primary servers are in Singapore. We process personal data in line with the Singapore Personal Data Protection Act (PDPA). Our sub-processors (Anthropic, Meta, GitHub, Cloudflare) operate internationally; data necessarily transits to and is processed in their regions per their terms.
+      </p>
+
+      <h2>Changes to this policy</h2>
+      <p>
+        Material changes — new sub-processors, new data categories, retention changes — will be reflected here with an updated date and, for tenants, a courtesy email. Continued use after a material change constitutes acceptance.
+      </p>
+
+      <p class="mt-12 text-sm" style="color: var(--text-muted);">
+        Questions or concerns? <a href="mailto:privacy@chiefpa.com">privacy@chiefpa.com</a>.
+      </p>
+    </div>
+  </main>
+
+  <div data-partial="footer"></div>
+  <script src="/partials.js" defer></script>
+</body>
+</html>

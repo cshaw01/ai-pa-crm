@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>How Chiefpa works — AI that learns when to take over</title>
+  <meta name="description" content="A walkthrough of how Chiefpa drafts customer replies in your voice, learns from your approvals, and earns auto-send on the routine questions only after you've answered them the same way enough times." />
+  <meta property="og:title" content="How Chiefpa works" />
+  <meta property="og:description" content="A walkthrough of how Chiefpa drafts customer replies in your voice, learns from your approvals, and earns auto-send on the routine questions." />
+  <meta property="og:image" content="https://chiefpa.com/og-default.png" />
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="https://chiefpa.com/how-it-works.html" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <link rel="canonical" href="https://chiefpa.com/how-it-works.html" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/styles.css" />
+  <script src="/tracking.js" defer></script>
+</head>
+<body>
+  <div data-partial="header"></div>
+
+  <main>
+    <section class="cp-section">
+      <div class="cp-container">
+        <div class="max-w-3xl">
+          <p class="text-sm font-semibold uppercase tracking-wider mb-4" style="color: var(--brand-blue);">How it works</p>
+          <h1 class="text-4xl sm:text-5xl font-bold mb-6">Drafts you approve. Patterns it earns.</h1>
+          <p class="text-lg" style="color: var(--text-body);">
+            Most "AI for messaging" tools either send replies automatically (scary) or write generic suggestions you have to rewrite anyway (useless). Chiefpa sits in the productive middle: every reply is one tap away from going out, and the system slowly learns which replies you'd let it send on its own.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="cp-section" style="background: var(--bg-soft);">
+      <div class="cp-container">
+        <div class="max-w-3xl">
+          <h2 class="text-2xl sm:text-3xl font-bold mb-4">Step 1 — A message arrives.</h2>
+          <p class="mb-4" style="color: var(--text-body);">
+            A customer pings you on WhatsApp. Or Messenger. Or Instagram. Or Telegram. Chiefpa picks it up at the channel level, so you don't manage four different apps.
+          </p>
+          <p class="mb-4" style="color: var(--text-body);">
+            It identifies who the sender is by matching the channel identifier (phone number, Messenger PSID, IG user ID) against your wiki — your private knowledge base of every customer, contract, service history, and preference. If they're new, that's a flag, not a problem.
+          </p>
+          <p style="color: var(--text-body);">
+            What it doesn't do: send anything. Yet.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="cp-section">
+      <div class="cp-container">
+        <div class="max-w-3xl">
+          <h2 class="text-2xl sm:text-3xl font-bold mb-4">Step 2 — A draft lands in your inbox.</h2>
+          <p class="mb-4" style="color: var(--text-body);">
+            Chiefpa reads the message, pulls in the right wiki context (this customer's history, the service they're asking about, your current pricing, any open jobs they have), and writes a reply that sounds like yours.
+          </p>
+          <p class="mb-4" style="color: var(--text-body);">
+            You see two things: a short analysis of <em>who they are and what they're asking</em>, and a ready-to-send draft. One tap sends it. Or you edit it inline. Or you reject and ask Chiefpa to try again with different framing.
+          </p>
+          <p style="color: var(--text-body);">
+            For new customers, a fresh contact file is created in your wiki the moment you approve the first reply. The CRM update is a side effect of saying "yes" — not a separate task you have to remember to do.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="cp-section" style="background: var(--bg-soft);">
+      <div class="cp-container">
+        <div class="max-w-3xl">
+          <h2 class="text-2xl sm:text-3xl font-bold mb-4">Step 3 — It watches you approve.</h2>
+          <p class="mb-4" style="color: var(--text-body);">
+            Every approval, every edit, every rejection is a signal. Chiefpa tags each conversation with an <em>intent label</em> — a short tag like <code class="px-1.5 py-0.5 rounded text-sm" style="background: var(--brand-blue-soft); color: var(--brand-blue-dark);">pricing-2hp-install</code> or <code class="px-1.5 py-0.5 rounded text-sm" style="background: var(--brand-blue-soft); color: var(--brand-blue-dark);">reschedule-appointment</code>. Same kind of question, same label.
+          </p>
+          <p class="mb-4" style="color: var(--text-body);">
+            Over time, patterns emerge. You've approved <code class="px-1.5 py-0.5 rounded text-sm" style="background: var(--brand-blue-soft); color: var(--brand-blue-dark);">pricing-2hp-install</code> drafts seven times across nine days. You haven't edited any of them. You haven't rejected any. The reply you give is, basically, the same reply.
+          </p>
+          <p style="color: var(--text-body);">
+            That pattern is now <strong>eligible for auto-send</strong>. Not auto-sending — eligible.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="cp-section">
+      <div class="cp-container">
+        <div class="max-w-3xl">
+          <h2 class="text-2xl sm:text-3xl font-bold mb-4">Step 4 — You decide which patterns earn auto-pilot.</h2>
+          <p class="mb-4" style="color: var(--text-body);">
+            In your dashboard, eligible patterns show up under "Ready to automate." You see the intent label, an example draft, and the count of clean approvals. One click flips it to auto-send.
+          </p>
+          <p class="mb-4" style="color: var(--text-body);">
+            From that moment on, when a customer asks <em>that</em> kind of question, Chiefpa replies on its own. You see the conversation in your inbox, marked <strong>auto-sent</strong>, with the full audit trail. You can demote a pattern back to manual at any time, and a single edit to a future draft of that pattern automatically pulls it out of auto-pilot — the system is biased toward keeping you in the loop.
+          </p>
+          <p style="color: var(--text-body);">
+            The threshold is intentionally conservative: at least five same-pattern approvals across at least five different days, zero edits, zero rejections, all within a rolling 30-day window. Newer evidence outweighs older evidence. A bad week pulls the pattern back to "still learning."
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="cp-section" style="background: var(--bg-soft);">
+      <div class="cp-container">
+        <div class="max-w-3xl">
+          <h2 class="text-2xl sm:text-3xl font-bold mb-4">Why this works.</h2>
+          <p class="mb-4" style="color: var(--text-body);">
+            Most service businesses answer the same dozen questions over and over: "What's your price for X?" "Can you come on Saturday?" "Do you service Y brand?" Those are the questions that should be handled in three seconds, not three hours after the customer messaged.
+          </p>
+          <p class="mb-4" style="color: var(--text-body);">
+            But every business <em>also</em> has a long tail of conversations that need actual judgement — quoting an unusual job, smoothing over a complaint, negotiating a renewal. Those should never be on auto-pilot.
+          </p>
+          <p style="color: var(--text-body);">
+            Chiefpa makes the easy questions disappear into the background and leaves the interesting ones for you. Your reply speed for the routine stuff approaches zero. Your attention budget for the customers who actually need you goes up.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="cp-section">
+      <div class="cp-container">
+        <div class="cp-card max-w-3xl mx-auto text-center" style="border-color: var(--brand-blue); border-width: 2px;">
+          <h2 class="text-2xl sm:text-3xl font-bold mb-4">See the loop on real conversations.</h2>
+          <p class="text-lg mb-6" style="color: var(--text-body);">The demo tenants are populated with realistic message histories, calendar events, and customer wikis. You can browse the inbox, approve a draft, and watch a pattern progress.</p>
+          <a href="/demo.html" class="cp-btn cp-btn-primary">Try the demo</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div data-partial="footer"></div>
+  <script src="/partials.js" defer></script>
+</body>
+</html>

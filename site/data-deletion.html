@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Data deletion instructions — Chiefpa</title>
+  <meta name="description" content="How to request deletion of your data from Chiefpa, whether you're a tenant or an end customer of one. Plain-English instructions, contact, and turnaround." />
+  <meta property="og:title" content="Chiefpa data deletion" />
+  <meta property="og:description" content="How to request deletion of your data from Chiefpa." />
+  <meta property="og:image" content="https://chiefpa.com/og-default.png" />
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="https://chiefpa.com/data-deletion.html" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="robots" content="index,follow" />
+  <link rel="canonical" href="https://chiefpa.com/data-deletion.html" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/styles.css" />
+  <script src="/tracking.js" defer></script>
+</head>
+<body>
+  <div data-partial="header"></div>
+
+  <main class="cp-section">
+    <div class="cp-container cp-prose">
+      <p class="text-sm font-semibold uppercase tracking-wider mb-4" style="color: var(--brand-blue);">Legal</p>
+      <h1 class="text-4xl font-bold mb-3">Data deletion instructions</h1>
+      <p class="text-sm" style="color: var(--text-muted);">Last updated: 25 April 2026</p>
+
+      <p class="mt-8">
+        Anyone whose data has been processed by Chiefpa can request deletion. There are two paths depending on who you are. Both end with the same outcome: your data is removed from our active systems and from our backups within the timelines below.
+      </p>
+
+      <h2>If you are an end customer</h2>
+      <p>
+        You messaged a service business and discovered they use Chiefpa to handle replies. You have two routes:
+      </p>
+      <ul>
+        <li>
+          <strong>Contact the business directly.</strong> They can delete your record from their dashboard. This is usually the fastest path.
+        </li>
+        <li>
+          <strong>Email us at <a href="mailto:privacy@chiefpa.com">privacy@chiefpa.com</a>.</strong> Include the channel you used (WhatsApp, Messenger, Instagram, Telegram, email, or web), the identifier (phone number, email, or username), and the name of the business if you remember it. We will confirm with the business and complete the deletion within <strong>7 business days</strong>.
+        </li>
+      </ul>
+
+      <h2>If you are a tenant (a business using Chiefpa)</h2>
+      <p>
+        Email <a href="mailto:privacy@chiefpa.com">privacy@chiefpa.com</a> from the email address associated with your account, asking to cancel and delete. We will:
+      </p>
+      <ul>
+        <li>Acknowledge within 1 business day.</li>
+        <li>Offer a <strong>30-day grace period</strong> during which you can request a full export of your wiki and database.</li>
+        <li>At the end of the grace period, perform full deletion as described below.</li>
+      </ul>
+      <p>
+        If you want immediate deletion (skipping the grace period and forfeiting the export), say so explicitly. We will process within 7 business days.
+      </p>
+
+      <h2>What gets deleted</h2>
+      <p>For an <strong>end-customer</strong> deletion request, we delete:</p>
+      <ul>
+        <li>All inbound and outbound messages associated with your channel identifier.</li>
+        <li>Any contact record the business kept about you in their wiki.</li>
+        <li>Calendar events linked to your identifier.</li>
+        <li>Cached AI drafts, edits, and approvals associated with your conversations.</li>
+        <li>Your channel identifier (phone number, PSID, IGSID, email, IP) from our event logs.</li>
+      </ul>
+      <p>For a <strong>tenant</strong> deletion request, we delete:</p>
+      <ul>
+        <li>The full per-tenant SQLite database (messages, contacts, calendar, approvals, audit log).</li>
+        <li>The private GitHub backup repository for the tenant (markdown wiki and SQL snapshots).</li>
+        <li>All encrypted channel credentials (Meta Page tokens, etc.).</li>
+        <li>Account access tokens.</li>
+      </ul>
+
+      <h2>What is retained</h2>
+      <p>
+        We retain a <strong>minimal anonymised audit log</strong> of the deletion event itself for 90 days — enough to demonstrate that deletion happened and answer accountability questions. This log records the date, the channel/tenant scope, and the requestor's confirmation. <strong>It does not contain message content, customer names, or personal identifiers.</strong>
+      </p>
+      <p>
+        Backups that pre-date the deletion request are rotated out within 30 days of the deletion. Beyond that, none of your data exists on our systems.
+      </p>
+
+      <h2>Sub-processor data</h2>
+      <p>
+        Some data necessarily passed through external services to deliver the original message — Meta (for Messenger / Instagram / WhatsApp), Anthropic (for AI inference), Telegram, and GitHub (for backup). When you delete from Chiefpa, we delete the data we hold; data held by these sub-processors is governed by their own retention and deletion policies. For Meta channels specifically, Meta retains conversation history independently and you can manage that through their privacy controls.
+      </p>
+
+      <h2>Turnaround commitment</h2>
+      <ul>
+        <li><strong>End-customer requests:</strong> 7 business days from receipt.</li>
+        <li><strong>Tenant cancellation with grace period:</strong> deletion completes 30 days + up to 7 business days after request.</li>
+        <li><strong>Tenant immediate deletion:</strong> 7 business days from receipt.</li>
+      </ul>
+
+      <h2>How we confirm</h2>
+      <p>
+        Once deletion is complete, we send a confirmation email to the requesting address. If you don't receive a confirmation within the timeline above, please follow up — emails sometimes fail.
+      </p>
+
+      <h2>Questions</h2>
+      <p>
+        Email <a href="mailto:privacy@chiefpa.com">privacy@chiefpa.com</a> with anything we haven't covered.
+      </p>
+    </div>
+  </main>
+
+  <div data-partial="footer"></div>
+  <script src="/partials.js" defer></script>
+</body>
+</html>

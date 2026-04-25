@@ -1,0 +1,30 @@
+<header class="cp-header-shadow bg-white sticky top-0 z-30">
+  <div class="cp-container flex items-center justify-between py-4">
+    <a href="/" class="flex items-center gap-2 group">
+      <span class="inline-block w-8 h-8 rounded-lg" style="background: var(--brand-blue);"></span>
+      <span class="text-lg font-bold" style="color: var(--text-strong);">Chiefpa</span>
+    </a>
+
+    <nav class="hidden md:flex items-center gap-8">
+      <a href="/how-it-works.html" class="cp-nav-link">How it works</a>
+      <a href="/industries.html" class="cp-nav-link">Industries</a>
+      <a href="/demo.html" class="cp-btn cp-btn-primary">Try the demo</a>
+    </nav>
+
+    <button data-mobile-nav-toggle aria-label="Open menu" class="md:hidden p-2 -mr-2 rounded-md hover:bg-slate-100">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="3" y1="6" x2="21" y2="6"></line>
+        <line x1="3" y1="12" x2="21" y2="12"></line>
+        <line x1="3" y1="18" x2="21" y2="18"></line>
+      </svg>
+    </button>
+  </div>
+
+  <div data-mobile-nav class="hidden md:hidden border-t" style="border-color: var(--border);">
+    <div class="cp-container py-4 flex flex-col gap-4">
+      <a href="/how-it-works.html" class="cp-nav-link">How it works</a>
+      <a href="/industries.html" class="cp-nav-link">Industries</a>
+      <a href="/demo.html" class="cp-btn cp-btn-primary self-start">Try the demo</a>
+    </div>
+  </div>
+</header>

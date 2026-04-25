@@ -13,12 +13,18 @@ bridge.py         # Webhook dispatch to the AI (calls claude CLI with CLAUDE.md)
 response_patterns.py  # Auto-approval pattern engine (promotion state + stats)
 backup_sync.py    # GitHub-backed wiki sync (per-tenant repos)
 CLAUDE.md         # AI product contract — what the AI does per message type
-static/           # SPA (vanilla JS + Tailwind CDN v4)
+static/           # Tenant SPA (vanilla JS + Tailwind v3 CDN)
+site/             # chiefpa.com marketing site + Meta App Review legal pages
+                  # (Cloudflare Pages — separate from the tenant VPS).
+                  # Includes one Pages Function: site/functions/api/lead.js
 docker/           # Per-tenant compose template, provision scripts, Traefik config
 wiki/             # Per-tenant knowledge base (markdown, git-backed)
 docs/
   plans/          # Forward-looking plan docs per feature
   solutions/      # Retrospective learnings (see below)
+  site-deploy.md  # Marketing-site deploy + maintenance runbook
+  meta-app-setup.md # Meta App registration + review runbook
+  wiki-backup.md  # GitHub-backed backup architecture
   deferred-work.md  # Intentionally deferred items with rationale
 ```
 
