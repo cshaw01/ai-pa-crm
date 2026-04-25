@@ -111,9 +111,9 @@ Submit for review from **App Review → Permissions and Features**. Request:
 - `business_management`
 
 Meta will ask for:
-- **Privacy Policy URL**: <https://chiefpa.com/privacy.html> — source: `site/privacy.html`
-- **Data Deletion URL**: <https://chiefpa.com/data-deletion.html> — source: `site/data-deletion.html`
-- **Terms of Service URL**: <https://chiefpa.com/terms.html> — source: `site/terms.html`
+- **Privacy Policy URL**: <https://chiefpa.com/privacy> — source: `site/privacy.html`
+- **Data Deletion URL**: <https://chiefpa.com/data-deletion> — source: `site/data-deletion.html`
+- **Terms of Service URL**: <https://chiefpa.com/terms> — source: `site/terms.html`
 - A **screencast** showing the integration end-to-end:
   1. Tenant clicks Connect in the dashboard
   2. Facebook Login popup, pick Page, grant permissions
