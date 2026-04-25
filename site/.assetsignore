@@ -1,0 +1,6 @@
+# Files in this list are excluded from the Workers Static Assets bundle.
+# They still exist in the repo and can be imported by the Worker entry
+# (_worker.js), but they aren't publicly served as URLs.
+functions/
+wrangler.jsonc
+.assetsignore

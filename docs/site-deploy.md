@@ -1,6 +1,8 @@
 # chiefpa.com Marketing Site — Deploy & Maintenance Runbook
 
-The marketing site at `chiefpa.com` (apex) is a static site hosted on **Cloudflare Pages**, with a single Pages Function for the demo-form lead capture. Source lives in this repo under `site/`.
+The marketing site at `chiefpa.com` (apex) is hosted on **Cloudflare Workers + Static Assets** (the new unified Workers Builds flow — not legacy Pages). It serves static HTML/CSS/JS from `site/` and a single Worker route at `POST /api/lead` for the demo form. Source lives in this repo under `site/`.
+
+> **Note on Pages vs Workers:** projects connected via the new "Workers & Pages → Create" flow are **Workers + Assets**, not legacy Pages, even when the source is just static files. The Pages-style `functions/` directory does NOT auto-route in the Workers model — explicit routing in `site/_worker.js` is required. Our `site/wrangler.jsonc` declares the Worker entry, the assets directory, and the binding name (`ASSETS`).
 
 This runbook is the operational source of truth — every recurring task (deploying changes, wiring a tracking pixel, updating a legal page, adding a new tenant to the industry mapping, submitting Meta App Review) is documented here.
 
@@ -14,13 +16,16 @@ This runbook is the operational source of truth — every recurring task (deploy
 site/
 ├── index.html, how-it-works.html, industries.html, demo.html, thank-you.html
 ├── privacy.html, terms.html, data-deletion.html        # Meta App Review legal pages
-├── _head.html, _header.html, _footer.html              # shared partials
+├── _header.html, _footer.html                          # shared partials
 ├── partials.js                                         # injects partials at DOMContentLoaded
-├── styles.css                                          # marketing-site CSS on top of Tailwind CDN
-├── favicon.ico, og-default.png, sitemap.xml, robots.txt
+├── tracking.js                                         # single edit point for Meta Pixel + GA4
+├── styles.css, favicon.svg, sitemap.xml, robots.txt
+├── _worker.js                                          # Workers entry — routes /api/lead, falls through to ASSETS
+├── wrangler.jsonc                                      # Workers + Static Assets config
+├── .assetsignore                                       # exclude functions/, wrangler.jsonc from public uploads
 └── functions/
     └── api/
-        └── lead.js                                     # Cloudflare Pages Function: form handler
+        └── lead.js                                     # form-handler module (imported by _worker.js)
 ```
 
 The site is fully static except for `POST /api/lead`. There is no application server, no database, no Traefik routing, no tenant-VPS dependency for the marketing site. Only the apex `chiefpa.com` and `www.chiefpa.com` are served from Cloudflare Pages — the four tenant subdomains (`hvac`, `chiro`, `insurance`, `santhi`) continue to live on the existing Traefik + FastAPI stack as before.
@@ -45,14 +50,14 @@ In the Pages project's **Build** settings:
 | Setting | Value |
 |---|---|
 | Framework preset | None |
-| Build command | *(leave empty — site is plain HTML, no build step)* |
+| Build command | *(leave empty — Workers Builds picks up `wrangler.jsonc` automatically)* |
 | **Root directory** | **`site`** |
 | Build output directory | `/` *(or leave empty — defaults to root directory)* |
 | Environment variables | See section 5 below |
 
-> **Critical:** the **Root directory must be `site`**, not blank. Cloudflare Pages auto-detects a `functions/` directory at the build *root*, not relative to the build output. If the root is blank, CF looks for `/functions/` at the repo root, finds nothing, ships only static assets, and silently drops `site/functions/api/lead.js` — leaving you with `404 /api/lead` and no way to add env vars (the dashboard will say "Variables cannot be added to a Worker that only has static assets"). If you see those symptoms, this setting is the cause.
+> **Critical:** the **Root directory must be `site`**, not blank. The repo's `wrangler.jsonc` lives at `site/wrangler.jsonc` and is what tells CF this is a Worker with a Static Assets binding. If Root directory is blank, CF doesn't find the wrangler config, defaults to "static assets only", and refuses to accept env vars with the message "Variables cannot be added to a Worker that only has static assets." Setting Root directory to `site` makes it discover the config, build the Worker, and bind ASSETS correctly.
 
-Click **Save and Deploy**. The first deploy will publish whatever is on `main` to `https://chiefpa-site.pages.dev`. Confirm that loads before continuing — and also confirm `curl -I https://<project>.pages.dev/api/lead` returns `405` (not `404`), which proves the Function was bundled.
+Click **Save and Deploy**. The first deploy publishes whatever is on `main` to `https://<project>.pages.dev` (or `*.workers.dev`). Confirm that loads, then verify `curl -I https://<project>.pages.dev/api/lead` returns `405` (not `404`) — that proves the Worker route is wired.
 
 ### 3. Add custom domains (apex + www)
 
