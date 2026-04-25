@@ -46,11 +46,13 @@ In the Pages project's **Build** settings:
 |---|---|
 | Framework preset | None |
 | Build command | *(leave empty — site is plain HTML, no build step)* |
-| Build output directory | `site` |
-| Root directory | *(leave empty)* |
+| **Root directory** | **`site`** |
+| Build output directory | `/` *(or leave empty — defaults to root directory)* |
 | Environment variables | See section 5 below |
 
-Click **Save and Deploy**. The first deploy will publish whatever is on `main` to `https://chiefpa-site.pages.dev`. Confirm that loads before continuing.
+> **Critical:** the **Root directory must be `site`**, not blank. Cloudflare Pages auto-detects a `functions/` directory at the build *root*, not relative to the build output. If the root is blank, CF looks for `/functions/` at the repo root, finds nothing, ships only static assets, and silently drops `site/functions/api/lead.js` — leaving you with `404 /api/lead` and no way to add env vars (the dashboard will say "Variables cannot be added to a Worker that only has static assets"). If you see those symptoms, this setting is the cause.
+
+Click **Save and Deploy**. The first deploy will publish whatever is on `main` to `https://chiefpa-site.pages.dev`. Confirm that loads before continuing — and also confirm `curl -I https://<project>.pages.dev/api/lead` returns `405` (not `404`), which proves the Function was bundled.
 
 ### 3. Add custom domains (apex + www)
 
@@ -225,6 +227,8 @@ If a review is rejected, the most common reason is screencast ambiguity about wh
 **Custom domain shows "Pending"** — DNS hasn't propagated. Check `dig +short chiefpa.com @1.1.1.1`. If the CNAME isn't visible, manually re-add the domain in the Pages project.
 
 **Form returns 500** — Pages Function error. Cloudflare dashboard → **Pages** → project → **Functions** → **Real-time Logs** to see the stack trace. Common causes: missing env var, Telegram bot token revoked, Turnstile secret-key mismatch.
+
+**`/api/lead` returns 404 / dashboard says "Variables cannot be added to a Worker that only has static assets"** — the Pages Function never made it into the deploy. The build config's **Root directory** is wrong. Fix: Settings → Build configuration → set Root directory to `site` (not blank), set Build output directory to `/` or empty, retry deployment. Verify with `curl -I https://chiefpa.com/api/lead` returning `405`. See section 2 above for the full correct config.
 
 **Turnstile widget shows "Error" in the form** — site key in HTML doesn't match the configured widget, or the widget isn't configured for the site domain. Check Cloudflare → Turnstile → widget settings.
 
