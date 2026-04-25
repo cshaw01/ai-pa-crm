@@ -23,7 +23,7 @@ const INDUSTRY_TO_REDIRECT = {
   yoga:           'https://santhi.chiefpa.com/',
 };
 
-const FALLBACK_REDIRECT = '/thank-you.html';
+const FALLBACK_REDIRECT = '/thank-you';
 
 const REVENUE_BANDS = ['lt-100k', '100k-500k', '500k-1m', '1m-plus', 'prefer-not-say'];
 

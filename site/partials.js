@@ -10,7 +10,7 @@
   function loadPartial(el) {
     var name = el.getAttribute('data-partial');
     if (!name) return Promise.resolve();
-    return fetch('/_' + name + '.html', { credentials: 'omit' })
+    return fetch('/_' + name, { credentials: 'omit' })
       .then(function (res) {
         if (!res.ok) throw new Error('partial ' + name + ' ' + res.status);
         return res.text();

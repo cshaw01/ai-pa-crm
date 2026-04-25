@@ -24,13 +24,6 @@ export default {
       return lead.onRequest(context);
     }
 
-    // html_handling: "none" doesn't auto-map / -> /index.html, so do it here.
-    if (url.pathname === '/' || url.pathname.endsWith('/')) {
-      const indexUrl = new URL(url);
-      indexUrl.pathname = url.pathname + 'index.html';
-      return env.ASSETS.fetch(new Request(indexUrl, request));
-    }
-
     return env.ASSETS.fetch(request);
   },
 };
